@@ -1,0 +1,67 @@
+[优化]阴影剔除 | [Optimizations]Shadow Culling | [Оптимизации]отсечения по теням
+
+[h2]介绍 | Introduction | Введение[/h2]
+渲染过程中会忽略被阴影遮挡的物品，显著减轻低配GPU负载，特别适合物品繁多的密室场景。
+
+Items occluded by shadows are ignored during rendering, significantly reducing the load on low-end GPUs, especially suitable for densely packed room scenes with numerous objects.
+
+Во время рендеринга игнорируются объекты, скрытые тенями, что значительно снижает нагрузку на слабые видеокарты. Особенно полезно в сценах с большим количеством объектов, например, в тесных помещениях.
+
+[hr][/hr]
+[h2]剔除 | Culling | Отсечение[/h2]
+五点采样，剔除中心、轴对齐包围盒四顶点都位于阴影中的物品。
+
+Five-point sampling is used to cull items whose center and all four vertices of the axis-aligned bounding box are located within shadows.
+
+Используется пятиточечная выборка для отсечения объектов, у которых и центр, и все четыре вершины ограничивающего параллелепипеда (AABB) находятся в тенях.
+
+[hr][/hr]
+[h2]优化 | Optimizations | Оптимизации[/h2]
+[list]
+[*][i]stackalloc[/i]减轻GC压力。
+[*]引用结构体，避免创建副本。
+[*]视窗内AABB相交测试获取凸包（会投射阴影的对象）。
+[*]凸包预筛选，提前过滤阴影中的凸包，倍数级减少处理量。
+[*]凸包阴影AABB缓存，用于与物品快速相交测试。
+[*]不对视窗外的物品执行阴影剔除。
+[*]有个点子灵光一闪，但我忘了。
+[/list]
+[list]
+[*][i]stackalloc[/i] reduces GC pressure.
+[*]Using ref structs to avoid copies.
+[*]Perform AABB intersection tests within the viewport to obtain convex hulls (objects that cast shadows).
+[*]Pre-filter convex hulls to exclude those in shadows early, reducing the processing load by multiples.
+[*]Caching convex hull shadow AABBs for fast intersection tests with items.
+[*]Shadow culling is not performed on items outside the viewport.
+[*]I had a spark of inspiration, but I forgot it.
+[/list]
+[list]
+[*] [i]stackalloc[/i] снижает нагрузку на сборщик мусора (GC).
+[*] Использование структур по ссылке ([i]ref struct[/i]) для избежания копирования.
+[*] Тест пересечения AABB в пределах окна вида для получения выпуклых оболочек (объектов, отбрасывающих тени).
+[*] Предварительная фильтрация выпуклых оболочек для раннего исключения находящихся в тенях, что в разы снижает объем обработки.
+[*] Кэширование теневых AABB выпуклых оболочек для быстрого теста пересечения с объектами.
+[*] Отсечение по теням не выполняется для объектов вне окна вида.
+[*] Был проблеск идеи, но я о ней забыл.
+[/list]
+
+[hr][/hr]
+[h2]控制台命令 | Console Commands | Консольные команды[/h2]
+[list]
+[*][i]shadowculling_toggle[/i] [b]功能[/b] 开关阴影剔除
+[*][i]shadowculling_debugonce[/i] [b]调试[/b] 执行一次阴影剔除
+[*][i]shadowculling_debugdrawaabb[/i] [b]调试[/b] 绘制物品的AABB
+[*][i]shadowculling_debuglog[/i] [b]调试[/b] 显示日志
+[/list]
+[list]
+[*][i]shadowculling_toggle[/i] [b]Function[/b] Toggle shadow culling
+[*][i]shadowculling_debugonce[/i] [b]Debug[/b] Perform shadow culling once
+[*][i]shadowculling_debugdrawaabb[/i] [b]Debug[/b] Draw the AABB of items
+[*][i]shadowculling_debuglog[/i] [b]Debug[/b] Show logs
+[/list]
+[list]
+[*] [i]shadowculling_toggle[/i] [b]Функция[/b] Включение/отключение отсечения по теням
+[*] [i]shadowculling_debugonce[/i] [b]Отладка[/b] Выполнить отсечение по теням один раз
+[*] [i]shadowculling_debugdrawaabb[/i] [b]Отладка[/b] Отобразить AABB объектов
+[*] [i]shadowculling_debuglog[/i] [b]Отладка[/b] Показать логи
+[/list]
