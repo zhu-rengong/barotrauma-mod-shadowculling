@@ -1,0 +1,54 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.3.32819.101
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "WindowsClient", "ClientProject\WindowsClient.csproj", "{A2B1E2A9-2467-4672-B674-863A567E8484}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "LinuxClient", "ClientProject\LinuxClient.csproj", "{DE15522F-1F5E-4055-BD43-8BABAD659532}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Assets", "Assets\Assets.csproj", "{22A1E1DA-BE10-45E0-8D2A-0FE65E773FF7}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Linux", "Linux", "{35C69328-1676-4ACD-825C-9B3732501A75}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Windows", "Windows", "{A43FEDB3-075D-4468-8FFE-55ACE8302253}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "OSX", "OSX", "{FB4AF98D-A8B6-43EA-95FC-4A635E4315B6}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OSXClient", "ClientProject\OSXClient.csproj", "{8C80A256-914B-41AC-84E7-6EA528AF60D4}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A2B1E2A9-2467-4672-B674-863A567E8484}.Debug|x64.ActiveCfg = Debug|x64
+		{A2B1E2A9-2467-4672-B674-863A567E8484}.Debug|x64.Build.0 = Debug|x64
+		{A2B1E2A9-2467-4672-B674-863A567E8484}.Release|x64.ActiveCfg = Release|x64
+		{A2B1E2A9-2467-4672-B674-863A567E8484}.Release|x64.Build.0 = Release|x64
+		{DE15522F-1F5E-4055-BD43-8BABAD659532}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{DE15522F-1F5E-4055-BD43-8BABAD659532}.Debug|x64.Build.0 = Debug|Any CPU
+		{DE15522F-1F5E-4055-BD43-8BABAD659532}.Release|x64.ActiveCfg = Release|Any CPU
+		{DE15522F-1F5E-4055-BD43-8BABAD659532}.Release|x64.Build.0 = Release|Any CPU
+		{22A1E1DA-BE10-45E0-8D2A-0FE65E773FF7}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{22A1E1DA-BE10-45E0-8D2A-0FE65E773FF7}.Debug|x64.Build.0 = Debug|Any CPU
+		{22A1E1DA-BE10-45E0-8D2A-0FE65E773FF7}.Release|x64.ActiveCfg = Release|Any CPU
+		{22A1E1DA-BE10-45E0-8D2A-0FE65E773FF7}.Release|x64.Build.0 = Release|Any CPU
+		{8C80A256-914B-41AC-84E7-6EA528AF60D4}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{8C80A256-914B-41AC-84E7-6EA528AF60D4}.Debug|x64.Build.0 = Debug|Any CPU
+		{8C80A256-914B-41AC-84E7-6EA528AF60D4}.Release|x64.ActiveCfg = Release|Any CPU
+		{8C80A256-914B-41AC-84E7-6EA528AF60D4}.Release|x64.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{A2B1E2A9-2467-4672-B674-863A567E8484} = {A43FEDB3-075D-4468-8FFE-55ACE8302253}
+		{DE15522F-1F5E-4055-BD43-8BABAD659532} = {35C69328-1676-4ACD-825C-9B3732501A75}
+		{8C80A256-914B-41AC-84E7-6EA528AF60D4} = {FB4AF98D-A8B6-43EA-95FC-4A635E4315B6}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {E27B0EAB-13FF-47B7-A220-FC2E86D315C9}
+	EndGlobalSection
+EndGlobal

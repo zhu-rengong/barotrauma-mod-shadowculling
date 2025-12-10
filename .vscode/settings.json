@@ -1,0 +1,5 @@
+{
+    "workbench.commandPalette.showAskInChat": false,
+    "accessibility.verbosity.inlineChat": false,
+    "codingcopilot.enableInlineChat": false
+}
