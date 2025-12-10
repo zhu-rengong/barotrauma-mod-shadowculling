@@ -16,7 +16,7 @@ Five-point sampling is used to cull items whose center and all four vertices of 
 Используется пятиточечная выборка для отсечения объектов, у которых и центр, и все четыре вершины ограничивающего параллелепипеда (AABB) находятся в тенях.
 
 [hr][/hr]
-[h2]优化 | Optimizations | Оптимизации[/h2]
+[h2]优化细节 | Optimize details | Оптимизировать детали[/h2]
 [list]
 [*][i]stackalloc[/i]减轻GC压力。
 [*]引用结构体，避免创建副本。
@@ -65,3 +65,6 @@ Five-point sampling is used to cull items whose center and all four vertices of 
 [*] [i]shadowculling_debugdrawaabb[/i] [b]Отладка[/b] Отобразить AABB объектов
 [*] [i]shadowculling_debuglog[/i] [b]Отладка[/b] Показать логи
 [/list]
+
+[hr][/hr]
+[url=https://github.com/zhu-rengong/barotrauma-mod-shadowculling]Github[/url]
