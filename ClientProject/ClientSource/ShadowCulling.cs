@@ -302,15 +302,18 @@ namespace Whosyouradddy.ShadowCulling
                 // The correct one should be:
                 // cachedVisibleExtents = extents = new Rectangle(min.ToPoint(), (max - min).ToPoint());
                 // I have to calculate the sample points based on incorrect cached extents in real-time here:
+                itemAABB.Width *= 2;
+                itemAABB.Height *= 2;
+
                 // left bottom
                 samplePoints[1].X = itemAABB.X;
                 samplePoints[1].Y = itemAABB.Y;
                 // right bottom
-                samplePoints[2].X = itemAABB.X + itemAABB.Width * 2;
+                samplePoints[2].X = itemAABB.X + itemAABB.Width;
                 samplePoints[2].Y = itemAABB.Y;
                 // right top
                 samplePoints[3].X = samplePoints[2].X;
-                samplePoints[3].Y = itemAABB.Y + itemAABB.Height * 2;
+                samplePoints[3].Y = itemAABB.Y + itemAABB.Height;
                 // left top
                 samplePoints[4].X = itemAABB.X;
                 samplePoints[4].Y = samplePoints[3].Y;

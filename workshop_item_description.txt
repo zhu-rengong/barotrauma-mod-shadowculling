@@ -48,22 +48,22 @@ Five-point sampling is used to cull items whose center and all four vertices of 
 [hr][/hr]
 [h2]控制台命令 | Console Commands | Консольные команды[/h2]
 [list]
-[*][i]shadowculling_toggle[/i] [b]功能[/b] 开关阴影剔除
-[*][i]shadowculling_debugonce[/i] [b]调试[/b] 执行一次阴影剔除
-[*][i]shadowculling_debugdrawaabb[/i] [b]调试[/b] 绘制物品的AABB
-[*][i]shadowculling_debuglog[/i] [b]调试[/b] 显示日志
+[*][i]shadowcullingtoggle[/i] [b]功能[/b] 开关阴影剔除
+[*][i]shadowcullingdebugonce[/i] [b]调试[/b] 执行一次阴影剔除
+[*][i]shadowcullingdebugdrawaabb[/i] [b]调试[/b] 绘制物品的AABB
+[*][i]shadowcullingdebuglog[/i] [b]调试[/b] 显示日志
 [/list]
 [list]
-[*][i]shadowculling_toggle[/i] [b]Function[/b] Toggle shadow culling
-[*][i]shadowculling_debugonce[/i] [b]Debug[/b] Perform shadow culling once
-[*][i]shadowculling_debugdrawaabb[/i] [b]Debug[/b] Draw the AABB of items
-[*][i]shadowculling_debuglog[/i] [b]Debug[/b] Show logs
+[*][i]shadowcullingtoggle[/i] [b]Function[/b] Toggle shadow culling
+[*][i]shadowcullingdebugonce[/i] [b]Debug[/b] Perform shadow culling once
+[*][i]shadowcullingdebugdrawaabb[/i] [b]Debug[/b] Draw the AABB of items
+[*][i]shadowcullingdebuglog[/i] [b]Debug[/b] Show logs
 [/list]
 [list]
-[*] [i]shadowculling_toggle[/i] [b]Функция[/b] Включение/отключение отсечения по теням
-[*] [i]shadowculling_debugonce[/i] [b]Отладка[/b] Выполнить отсечение по теням один раз
-[*] [i]shadowculling_debugdrawaabb[/i] [b]Отладка[/b] Отобразить AABB объектов
-[*] [i]shadowculling_debuglog[/i] [b]Отладка[/b] Показать логи
+[*] [i]shadowcullingtoggle[/i] [b]Функция[/b] Включение/отключение отсечения по теням
+[*] [i]shadowcullingdebugonce[/i] [b]Отладка[/b] Выполнить отсечение по теням один раз
+[*] [i]shadowcullingdebugdrawaabb[/i] [b]Отладка[/b] Отобразить AABB объектов
+[*] [i]shadowcullingdebuglog[/i] [b]Отладка[/b] Показать логи
 [/list]
 
 [hr][/hr]

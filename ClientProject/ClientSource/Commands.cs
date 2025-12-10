@@ -25,12 +25,12 @@ namespace Whosyouradddy.ShadowCulling
 
         public static void AddCommands()
         {
-            AddedCommands.Add(new DebugConsole.Command("shadowculling_debugonce", "", (string[] args) =>
+            AddedCommands.Add(new DebugConsole.Command("shadowcullingdebugonce", "", (string[] args) =>
             {
                 CullEntities();
-            }));
+            }, isCheat: false));
 
-            AddedCommands.Add(new DebugConsole.Command("shadowculling_toggle", "", (string[] args) =>
+            AddedCommands.Add(new DebugConsole.Command("shadowcullingtoggle", "", (string[] args) =>
             {
                 CullingEnabled = !CullingEnabled;
                 if (!CullingEnabled)
@@ -40,17 +40,17 @@ namespace Whosyouradddy.ShadowCulling
                         item.Visible = true;
                     });
                 }
-            }));
+            }, isCheat: false));
 
-            AddedCommands.Add(new DebugConsole.Command("shadowculling_debugdrawaabb", "", (string[] args) =>
+            AddedCommands.Add(new DebugConsole.Command("shadowcullingdebugdrawaabb", "", (string[] args) =>
             {
                 DebugDrawAABB = !DebugDrawAABB;
-            }));
+            }, isCheat: false));
 
-            AddedCommands.Add(new DebugConsole.Command("shadowculling_debuglog", "", (string[] args) =>
+            AddedCommands.Add(new DebugConsole.Command("shadowcullingdebuglog", "", (string[] args) =>
             {
                 DebugLog = !DebugLog;
-            }));
+            }, isCheat: false));
 
             DebugConsole.Commands.AddRange(AddedCommands);
         }
@@ -59,6 +59,18 @@ namespace Whosyouradddy.ShadowCulling
         {
             AddedCommands.ForEach(c => DebugConsole.Commands.Remove(c));
             AddedCommands.Clear();
+        }
+
+        [HarmonyPatch(
+            declaringType: typeof(LuaGame),
+            methodName: nameof(LuaGame.IsCustomCommandPermitted)
+        )]
+        class LuaGame_IsCustomCommandPermitted
+        {
+            static void Postfix(Identifier command, ref bool __result)
+            {
+                if (AddedCommands.Any(c => c.Names.Contains(command.Value))) { __result = true; }
+            }
         }
     }
 }
