@@ -1,11 +1,11 @@
-[优化]阴影剔除 | [Optimizations]Shadow Culling | [Оптимизации]отсечения по теням
+[优化] 阴影剔除 | [Optimizations] Shadow Culling | [Оптимизации] отсечения по теням
 
 [h2]介绍 | Introduction | Введение[/h2]
-渲染过程中会忽略被阴影遮挡的物品，显著减轻低配GPU负载，特别适合物品繁多的密室场景。
+渲染过程中会忽略被阴影遮挡的物品，显著减轻CPU和低配GPU负载，CPU性能开销约降低5%~15%，特别适合物品繁多的密室场景。
 
-Items occluded by shadows are ignored during rendering, significantly reducing the load on low-end GPUs, especially suitable for densely packed room scenes with numerous objects.
+During rendering, items occluded by shadows are ignored, which significantly reduces the CPU and low‑end GPU workload. CPU performance overhead is lowered by approximately 5%–15%, making this especially suitable for cluttered room scenes with many objects.
 
-Во время рендеринга игнорируются объекты, скрытые тенями, что значительно снижает нагрузку на слабые видеокарты. Особенно полезно в сценах с большим количеством объектов, например, в тесных помещениях.
+В процессе рендеринга игнорируются объекты, перекрытые тенями, что значительно снижает нагрузку на процессор и маломощные видеокарты. Затраты производительности ЦП снижаются примерно на 5–15%, что особенно удобно для сцен с множеством предметов, например, в заполненных помещениях.
 
 [hr][/hr]
 [h2]剔除 | Culling | Отсечение[/h2]
@@ -19,6 +19,7 @@ Five-point sampling is used to cull items whose center and all four vertices of 
 [h2]优化细节 | Optimize details | Оптимизировать детали[/h2]
 [list]
 [*][i]stackalloc[/i]减轻GC压力。
+[*]多核调度，同时支持8个逻辑核心
 [*]引用结构体，避免创建副本。
 [*]视窗内AABB相交测试获取凸包（会投射阴影的对象）。
 [*]凸包预筛选，提前过滤阴影中的凸包，倍数级减少处理量。
@@ -28,6 +29,7 @@ Five-point sampling is used to cull items whose center and all four vertices of 
 [/list]
 [list]
 [*][i]stackalloc[/i] reduces GC pressure.
+[*]Multi-core scheduling, supporting up to 8 logical cores simultaneously.
 [*]Using ref structs to avoid copies.
 [*]Perform AABB intersection tests within the viewport to obtain convex hulls (objects that cast shadows).
 [*]Pre-filter convex hulls to exclude those in shadows early, reducing the processing load by multiples.
@@ -37,6 +39,7 @@ Five-point sampling is used to cull items whose center and all four vertices of 
 [/list]
 [list]
 [*] [i]stackalloc[/i] снижает нагрузку на сборщик мусора (GC).
+[*] Многопроцессорное планирование с одновременной поддержкой до 8 логических ядер.
 [*] Использование структур по ссылке ([i]ref struct[/i]) для избежания копирования.
 [*] Тест пересечения AABB в пределах окна вида для получения выпуклых оболочек (объектов, отбрасывающих тени).
 [*] Предварительная фильтрация выпуклых оболочек для раннего исключения находящихся в тенях, что в разы снижает объем обработки.

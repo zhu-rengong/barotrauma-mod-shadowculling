@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.Metrics;
 using System.Linq;
@@ -106,16 +107,18 @@ namespace Whosyouradddy.ShadowCulling
         }
 
         private const int SampleNumber = 5;
-
+        private static int ItemsPerBatch = 75;
         private const double CullInterval = 0.05;
-
         private static double prevCullTime;
         private static double prevShowPerf;
-
         private static bool dirtyCulling = false;
 
-        private static List<ConvexHull> convexHulls = new(64);
-        private static Dictionary<ConvexHull, Rectangle> hullShadowAABB = new(64);
+        private static List<ConvexHull> convexHulls = new(100);
+        private static Dictionary<ConvexHull, Rectangle> chAABBCache = new(100);
+        private static ConcurrentDictionary<ConvexHull, Rectangle> chShadowAABBCache = new();
+        private static List<Item> itemsToProcess = new(10000);
+
+        private static readonly object counterLock = new();
 
         public static void CullEntities()
         {
@@ -142,10 +145,10 @@ namespace Whosyouradddy.ShadowCulling
 
             Span<Vector2> samplePoints = stackalloc Vector2[SampleNumber];
             Span<bool> isInShadowCache = stackalloc bool[SampleNumber];
-            int howManyPointsAreInShadow;
 
             convexHulls.Clear();
-            hullShadowAABB.Clear();
+            chAABBCache.Clear();
+            chShadowAABBCache.Clear();
             Rectangle viewRect = camera.WorldView;
 
             // Get the convex hulls that intersect with the camera viewport
@@ -155,23 +158,44 @@ namespace Whosyouradddy.ShadowCulling
                 {
                     if (hull.IsInvalid || !hull.Enabled) { continue; }
 
-                    Rectangle hullAABB = hull.BoundingBox;
+                    Rectangle chAABB = hull.BoundingBox;
                     // In the world coordinate, the origin of the ConvexHull.BoundingBox is assumed to be left-bottom corner(perhaps due to historical reasons?)
                     // Here, it is necessary to convert its origin to the top-left corner to maintain consistency with other world rectangles.
-                    hullAABB.Y += hullAABB.Height;
+                    chAABB.Y += chAABB.Height;
 
                     if (hull.ParentEntity?.Submarine is Submarine submarine)
                     {
-                        hullAABB.X += (int)submarine.DrawPosition.X;
-                        hullAABB.Y += (int)submarine.DrawPosition.Y;
+                        chAABB.X += (int)submarine.DrawPosition.X;
+                        chAABB.Y += (int)submarine.DrawPosition.Y;
                     }
 
-                    if (hullAABB.X > viewRect.X + viewRect.Width) { continue; }
-                    if (hullAABB.X + hullAABB.Width < viewRect.X) { continue; }
-                    if (hullAABB.Y < viewRect.Y - viewRect.Height) { continue; }
-                    if (hullAABB.Y - hullAABB.Height > viewRect.Y) { continue; }
+                    if (chAABB.X > viewRect.X + viewRect.Width) { continue; }
+                    if (chAABB.X + chAABB.Width < viewRect.X) { continue; }
+                    if (chAABB.Y < viewRect.Y - viewRect.Height) { continue; }
+                    if (chAABB.Y - chAABB.Height > viewRect.Y) { continue; }
 
                     convexHulls.Add(hull);
+
+                    // Cache the AABB of the convex hull
+                    chAABBCache[hull] = chAABB;
+
+                    // Cache the AABB of the convex hull's shadow
+                    VertexPositionColor[] vertices = hull.ShadowVertices;
+                    int vertexCount = hull.ShadowVertexCount;
+                    float minX = float.MaxValue, minY = float.MaxValue;
+                    float maxX = float.MinValue, maxY = float.MinValue;
+
+                    for (int j = 0; j < vertexCount; j++)
+                    {
+                        ref readonly Vector3 pos = ref vertices[j].Position;
+                        float posX = pos.X, posY = pos.Y;
+                        if (posX < minX) { minX = posX; }
+                        if (posX > maxX) { maxX = posX; }
+                        if (posY < minY) { minY = posY; }
+                        if (posY > maxY) { maxY = posY; }
+                    }
+
+                    chShadowAABBCache[hull] = new Rectangle((int)minX, (int)minY, Math.Abs((int)maxX - (int)minX), Math.Abs((int)maxY - (int)minY));
                 }
             }
 
@@ -179,37 +203,35 @@ namespace Whosyouradddy.ShadowCulling
             for (int i = convexHulls.Count - 1; i >= 0; i--)
             {
                 ConvexHull current = convexHulls[i];
-                howManyPointsAreInShadow = 0;
+                Rectangle chAABB = chAABBCache[current];
 
-                Rectangle hullAABB = current.BoundingBox;
-                hullAABB.Y += hullAABB.Height;
+                // center
+                samplePoints[0].X = chAABB.X + chAABB.Width / 2;
+                samplePoints[0].Y = chAABB.Y - chAABB.Height / 2;
+                // left top
+                samplePoints[1].X = chAABB.X;
+                samplePoints[1].Y = chAABB.Y;
+                // right top
+                samplePoints[2].X = chAABB.X + chAABB.Width;
+                samplePoints[2].Y = chAABB.Y;
+                // right bottom
+                samplePoints[3].X = samplePoints[2].X;
+                samplePoints[3].Y = chAABB.Y - chAABB.Height;
+                // left bottom
+                samplePoints[4].X = chAABB.X;
+                samplePoints[4].Y = samplePoints[3].Y;
 
-                Vector2 offset = Vector2.Zero;
-                if (current.ParentEntity?.Submarine is Submarine submarine)
+                int numSamplesInShadow = 0;
+                isInShadowCache.Fill(false);
+
+                foreach (var hull in convexHulls)
                 {
-                    offset.X = submarine.DrawPosition.X;
-                    offset.Y = submarine.DrawPosition.Y;
-                }
+                    if (!chAABB.Intersects(chShadowAABBCache[hull])) { continue; }
 
-                samplePoints[0].X = hullAABB.X + hullAABB.Width / 2 + offset.X;
-                samplePoints[0].Y = hullAABB.Y - hullAABB.Height / 2 + offset.Y;
-                SegmentPoint[] segmentPoints = current.vertices;
-                samplePoints[1].X = segmentPoints[0].Pos.X + offset.X;
-                samplePoints[1].Y = segmentPoints[0].Pos.Y + offset.Y;
-                samplePoints[2].X = segmentPoints[1].Pos.X + offset.X;
-                samplePoints[2].Y = segmentPoints[1].Pos.Y + offset.Y;
-                samplePoints[3].X = segmentPoints[2].Pos.X + offset.X;
-                samplePoints[3].Y = segmentPoints[2].Pos.Y + offset.Y;
-                samplePoints[4].X = segmentPoints[3].Pos.X + offset.X;
-                samplePoints[4].Y = segmentPoints[3].Pos.Y + offset.Y;
-
-                for (int j = 0; j < SampleNumber; j++)
-                {
-                    ref readonly Vector2 point = ref samplePoints[j];
-                    bool isInShadow = false;
-
-                    foreach (var hull in convexHulls)
+                    for (int j = 0; j < SampleNumber; j++)
                     {
+                        if (isInShadowCache[j]) { continue; }
+
                         int vertexCount = hull.ShadowVertexCount;
 
                         for (int k = 0; k < vertexCount; k += 3)
@@ -224,8 +246,8 @@ namespace Whosyouradddy.ShadowCulling
                             v0.Y = shadowVertex3.Y - shadowVertex1.Y;
                             v1.X = shadowVertex2.X - shadowVertex1.X;
                             v1.Y = shadowVertex2.Y - shadowVertex1.Y;
-                            v2.X = point.X - shadowVertex1.X;
-                            v2.Y = point.Y - shadowVertex1.Y;
+                            v2.X = samplePoints[j].X - shadowVertex1.X;
+                            v2.Y = samplePoints[j].Y - shadowVertex1.Y;
                             // Compute dot products
                             float dot00 = v0.X * v0.X + v0.Y * v0.Y;
                             float dot01 = v0.X * v1.X + v0.Y * v1.Y;
@@ -240,49 +262,29 @@ namespace Whosyouradddy.ShadowCulling
                             float v = (dot00 * dot12 - dot01 * dot02) * invDenom;
                             if (v >= 0.0f && (u + v) < 1.0f)
                             {
-                                howManyPointsAreInShadow++;
-                                isInShadow = true;
+                                numSamplesInShadow++;
+                                isInShadowCache[j] = true;
+                                if (numSamplesInShadow == SampleNumber)
+                                {
+                                    convexHulls.RemoveAt(i);
+                                    goto ALL_SAMPLES_IN_SHADOW;
+                                }
                                 break;
                             }
                         }
-
-                        if (isInShadow) { break; }
                     }
                 }
-
-                if (howManyPointsAreInShadow == SampleNumber)
-                {
-                    convexHulls.RemoveAt(i);
-                }
-                else
-                {
-                    // Cache the AABB of the convex hull's shadow
-                    VertexPositionColor[] vertices = current.ShadowVertices;
-                    int vertexCount = current.ShadowVertexCount;
-                    float minX = float.MaxValue, minY = float.MaxValue;
-                    float maxX = float.MinValue, maxY = float.MinValue;
-
-                    for (int j = 0; j < vertexCount; j++)
-                    {
-                        ref readonly Vector3 pos = ref vertices[j].Position;
-                        float posX = pos.X, posY = pos.Y;
-                        if (posX < minX) { minX = posX; }
-                        if (posX > maxX) { maxX = posX; }
-                        if (posY < minY) { minY = posY; }
-                        if (posY > maxY) { maxY = posY; }
-                    }
-
-                    hullShadowAABB.Add(current, new Rectangle((int)minX, (int)minY, Math.Abs((int)maxX - (int)minX), Math.Abs((int)maxY - (int)minY)));
-                }
+            ALL_SAMPLES_IN_SHADOW:;
             }
 
-            int count = 0;
+            itemsToProcess.Clear();
+
             foreach (var mapEntity in Submarine.VisibleEntities)
             {
                 if (mapEntity is not Item item
                     || item.IsHidden
                     || item.GetComponent<Ladder>() is not null
-                    || item.cachedVisibleExtents is not Rectangle itemAABB)
+                    || item.cachedVisibleExtents is not Rectangle)
                 {
                     continue;
                 }
@@ -293,103 +295,127 @@ namespace Whosyouradddy.ShadowCulling
                     continue;
                 }
 
-                samplePoints[0].X = item.DrawPosition.X;
-                samplePoints[0].Y = item.DrawPosition.Y;
-                itemAABB.Offset(samplePoints[0].X, samplePoints[0].Y);
+                itemsToProcess.Add(item);
+            }
 
-                // In Vanilla, the AABB bounds calculation is incorrect:
-                // ClientSource/Items/Item.cs | cachedVisibleExtents = extents = new Rectangle(min.ToPoint(), max.ToPoint());
-                // The correct one should be:
-                // cachedVisibleExtents = extents = new Rectangle(min.ToPoint(), (max - min).ToPoint());
-                // I have to calculate the sample points based on incorrect cached extents in real-time here:
-                itemAABB.Width *= 2;
-                itemAABB.Height *= 2;
+            int processedCount = 0;
+            Parallel.For(
+                fromInclusive: 0,
+                toExclusive: (itemsToProcess.Count + ItemsPerBatch - 1) / ItemsPerBatch,
+                parallelOptions: new ParallelOptions { MaxDegreeOfParallelism = 8 },
+                body: BatchProcessing
+            );
 
-                // left bottom
-                samplePoints[1].X = itemAABB.X;
-                samplePoints[1].Y = itemAABB.Y;
-                // right bottom
-                samplePoints[2].X = itemAABB.X + itemAABB.Width;
-                samplePoints[2].Y = itemAABB.Y;
-                // right top
-                samplePoints[3].X = samplePoints[2].X;
-                samplePoints[3].Y = itemAABB.Y + itemAABB.Height;
-                // left top
-                samplePoints[4].X = itemAABB.X;
-                samplePoints[4].Y = samplePoints[3].Y;
+            void BatchProcessing(int index)
+            {
+                int start = index * ItemsPerBatch;
+                int end = Math.Min(start + ItemsPerBatch, itemsToProcess.Count);
 
-                // Skip if there is no intersection
-                if (samplePoints[1].Y > viewRect.Y
-                    || samplePoints[3].X < viewRect.X
-                    || samplePoints[1].X > viewRect.X + viewRect.Width
-                    || samplePoints[3].Y < viewRect.Y - viewRect.Height)
+                Span<Vector2> _samplePoints = stackalloc Vector2[SampleNumber];
+                Span<bool> _isInShadowCache = stackalloc bool[SampleNumber];
+
+                for (int itemIndex = start; itemIndex < end; itemIndex++)
                 {
-                    continue;
-                }
+                    Item item = itemsToProcess[itemIndex];
+                    Rectangle itemAABB = item.cachedVisibleExtents!.Value;
 
-                /* TODO: use the following code to replace the above one when the issue is fixed
-                samplePoints[1].X = boundingBox.X;
-                samplePoints[1].Y = boundingBox.Y;
-                samplePoints[2].X = boundingBox.X + boundingBox.Width * 2;
-                samplePoints[2].Y = boundingBox.Y;
-                samplePoints[3].X = boundingBox.X;
-                samplePoints[3].Y = boundingBox.Y + boundingBox.Height * 2;
-                samplePoints[4].X = samplePoints[2].X;
-                samplePoints[4].Y = samplePoints[3].Y;
-                */
+                    // center
+                    _samplePoints[0].X = item.DrawPosition.X;
+                    _samplePoints[0].Y = item.DrawPosition.Y;
+                    itemAABB.Offset(_samplePoints[0].X, _samplePoints[0].Y);
 
-                howManyPointsAreInShadow = 0;
-                isInShadowCache.Fill(false);
+                    // In Vanilla, the AABB bounds calculation is messed up:
+                    // ClientSource/Items/Item.cs | cachedVisibleExtents = extents = new Rectangle(min.ToPoint(), max.ToPoint());
+                    // The correct one should be:
+                    // cachedVisibleExtents = extents = new Rectangle(min.ToPoint(), (max - min).ToPoint());
+                    // I have to calculate the sample points based on original cached extents in real-time here:
+                    itemAABB.Width *= 2;
+                    itemAABB.Height *= 2;
 
-                foreach (var hull in convexHulls)
-                {
-                    if (!itemAABB.Intersects(hullShadowAABB[hull])) { continue; }
+                    // left bottom
+                    _samplePoints[1].X = itemAABB.X;
+                    _samplePoints[1].Y = itemAABB.Y;
+                    // right bottom
+                    _samplePoints[2].X = itemAABB.X + itemAABB.Width;
+                    _samplePoints[2].Y = itemAABB.Y;
+                    // right top
+                    _samplePoints[3].X = _samplePoints[2].X;
+                    _samplePoints[3].Y = itemAABB.Y + itemAABB.Height;
+                    // left top
+                    _samplePoints[4].X = itemAABB.X;
+                    _samplePoints[4].Y = _samplePoints[3].Y;
 
-                    for (int i = 0; i < SampleNumber; i++)
+                    // Skip if there is no intersection
+                    if (_samplePoints[1].Y > viewRect.Y
+                        || _samplePoints[3].X < viewRect.X
+                        || _samplePoints[1].X > viewRect.X + viewRect.Width
+                        || _samplePoints[3].Y < viewRect.Y - viewRect.Height)
                     {
-                        if (isInShadowCache[i]) { continue; }
+                        continue;
+                    }
 
-                        int vertexCount = hull.ShadowVertexCount;
+                    int numSamplesInShadow = 0;
+                    _isInShadowCache.Fill(false);
 
-                        for (int j = 0; j < vertexCount; j += 3)
+                    foreach (var hull in convexHulls)
+                    {
+                        if (!itemAABB.Intersects(chShadowAABBCache[hull])) { continue; }
+
+                        for (int i = 0; i < SampleNumber; i++)
                         {
-                            ref readonly Vector3 shadowVertex1 = ref hull.ShadowVertices[j].Position;
-                            ref readonly Vector3 shadowVertex2 = ref hull.ShadowVertices[j + 1].Position;
-                            ref readonly Vector3 shadowVertex3 = ref hull.ShadowVertices[j + 2].Position;
-                            Vector2 v0, v1, v2;
+                            if (_isInShadowCache[i]) { continue; }
 
-                            // Compute vectors
-                            v0.X = shadowVertex3.X - shadowVertex1.X;
-                            v0.Y = shadowVertex3.Y - shadowVertex1.Y;
-                            v1.X = shadowVertex2.X - shadowVertex1.X;
-                            v1.Y = shadowVertex2.Y - shadowVertex1.Y;
-                            v2.X = samplePoints[i].X - shadowVertex1.X;
-                            v2.Y = samplePoints[i].Y - shadowVertex1.Y;
-                            // Compute dot products
-                            float dot00 = v0.X * v0.X + v0.Y * v0.Y;
-                            float dot01 = v0.X * v1.X + v0.Y * v1.Y;
-                            float dot02 = v0.X * v2.X + v0.Y * v2.Y;
-                            float dot11 = v1.X * v1.X + v1.Y * v1.Y;
-                            float dot12 = v1.X * v2.X + v1.Y * v2.Y;
-                            // Compute barycentric coordinates
-                            float invDenom = 1.0f / (dot00 * dot11 - dot01 * dot01);
-                            float u = (dot11 * dot02 - dot01 * dot12) * invDenom;
-                            // Check if the point is in triangle
-                            if (u < 0.0f) { continue; }
-                            float v = (dot00 * dot12 - dot01 * dot02) * invDenom;
-                            if (v >= 0.0f && (u + v) < 1.0f)
+                            int vertexCount = hull.ShadowVertexCount;
+
+                            for (int j = 0; j < vertexCount; j += 3)
                             {
-                                howManyPointsAreInShadow++;
-                                isInShadowCache[i] = true;
-                                break;
+                                ref readonly Vector3 shadowVertex1 = ref hull.ShadowVertices[j].Position;
+                                ref readonly Vector3 shadowVertex2 = ref hull.ShadowVertices[j + 1].Position;
+                                ref readonly Vector3 shadowVertex3 = ref hull.ShadowVertices[j + 2].Position;
+                                Vector2 v0, v1, v2;
+
+                                // Compute vectors
+                                v0.X = shadowVertex3.X - shadowVertex1.X;
+                                v0.Y = shadowVertex3.Y - shadowVertex1.Y;
+                                v1.X = shadowVertex2.X - shadowVertex1.X;
+                                v1.Y = shadowVertex2.Y - shadowVertex1.Y;
+                                v2.X = _samplePoints[i].X - shadowVertex1.X;
+                                v2.Y = _samplePoints[i].Y - shadowVertex1.Y;
+                                // Compute dot products
+                                float dot00 = v0.X * v0.X + v0.Y * v0.Y;
+                                float dot01 = v0.X * v1.X + v0.Y * v1.Y;
+                                float dot02 = v0.X * v2.X + v0.Y * v2.Y;
+                                float dot11 = v1.X * v1.X + v1.Y * v1.Y;
+                                float dot12 = v1.X * v2.X + v1.Y * v2.Y;
+                                // Compute barycentric coordinates
+                                float invDenom = 1.0f / (dot00 * dot11 - dot01 * dot01);
+                                float u = (dot11 * dot02 - dot01 * dot12) * invDenom;
+                                // Check if the point is in triangle
+                                if (u < 0.0f) { continue; }
+                                float v = (dot00 * dot12 - dot01 * dot02) * invDenom;
+                                if (v >= 0.0f && (u + v) < 1.0f)
+                                {
+                                    numSamplesInShadow++;
+                                    _isInShadowCache[i] = true;
+                                    if (numSamplesInShadow == SampleNumber)
+                                    {
+                                        item.Visible = false;
+                                        goto ALL_SAMPLES_IN_SHADOW;
+                                    }
+                                    break;
+                                }
                             }
                         }
                     }
+
+                    item.Visible = true;
+                ALL_SAMPLES_IN_SHADOW:
+
+                    lock (counterLock)
+                    {
+                        processedCount++;
+                    }
                 }
-
-                item.Visible = howManyPointsAreInShadow < SampleNumber;
-
-                count++;
             }
 
             stopWatch.Stop();
@@ -397,8 +423,8 @@ namespace Whosyouradddy.ShadowCulling
 
             if (DebugLog && Timing.TotalTime - prevShowPerf >= 2.0f)
             {
-                float avgTime = GameMain.PerformanceCounter.GetAverageElapsedMillisecs("Mod:ShadowCulling");
-                LuaCsLogger.LogMessage($"Mod:ShadowCulling | Mean: {avgTime} | Cull: {count}/{Submarine.VisibleEntities.Count()} | Hulls: {convexHulls.Count}");
+                float average = GameMain.PerformanceCounter.GetAverageElapsedMillisecs("Mod:ShadowCulling");
+                LuaCsLogger.LogMessage($"Mod:ShadowCulling | Mean: {average} | Cull: {processedCount}/{Submarine.VisibleEntities.Count()} | Hulls: {convexHulls.Count}");
                 prevShowPerf = Timing.TotalTime;
             }
 
