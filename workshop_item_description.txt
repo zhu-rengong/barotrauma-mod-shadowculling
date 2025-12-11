@@ -71,3 +71,5 @@ Five-point sampling is used to cull items whose center and all four vertices of 
 
 [hr][/hr]
 [url=https://github.com/zhu-rengong/barotrauma-mod-shadowculling]Github[/url]
+
+[img=https://images.steamusercontent.com/ugc/11953855829976146722/4AB6E2DDFBC5C782B1712B097EDCA2A14E74A8D5/?imw=660&imh=1024&ima=fit&impolicy=Letterbox&imcolor=%23000000&letterbox=true][/img]
