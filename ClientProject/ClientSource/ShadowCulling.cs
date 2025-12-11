@@ -200,9 +200,9 @@ namespace Whosyouradddy.ShadowCulling
             }
 
             // Exclude the convex hulls whose sample points are all in shadow
-            for (int i = convexHulls.Count - 1; i >= 0; i--)
+            for (int ch_index = convexHulls.Count - 1; ch_index >= 0; ch_index--)
             {
-                ConvexHull current = convexHulls[i];
+                ConvexHull current = convexHulls[ch_index];
                 Rectangle chAABB = chAABBCache[current];
 
                 // center
@@ -228,45 +228,54 @@ namespace Whosyouradddy.ShadowCulling
                 {
                     if (!chAABB.Intersects(chShadowAABBCache[hull])) { continue; }
 
-                    for (int j = 0; j < SampleNumber; j++)
+                    int vertexCount = hull.ShadowVertexCount;
+
+                    for (int i = 0; i < SampleNumber; i++)
                     {
-                        if (isInShadowCache[j]) { continue; }
+                        if (isInShadowCache[i]) { continue; }
 
-                        int vertexCount = hull.ShadowVertexCount;
-
-                        for (int k = 0; k < vertexCount; k += 3)
+                        // Ray casting test
+                        for (int k = 0; k < vertexCount; k += 6)
                         {
                             ref readonly Vector3 shadowVertex1 = ref hull.ShadowVertices[k].Position;
                             ref readonly Vector3 shadowVertex2 = ref hull.ShadowVertices[k + 1].Position;
-                            ref readonly Vector3 shadowVertex3 = ref hull.ShadowVertices[k + 2].Position;
-                            Vector2 v0, v1, v2;
+                            ref readonly Vector3 shadowVertex3 = ref hull.ShadowVertices[k + 4].Position;
+                            ref readonly Vector3 shadowVertex4 = ref hull.ShadowVertices[k + 5].Position;
 
-                            // Compute vectors
-                            v0.X = shadowVertex3.X - shadowVertex1.X;
-                            v0.Y = shadowVertex3.Y - shadowVertex1.Y;
-                            v1.X = shadowVertex2.X - shadowVertex1.X;
-                            v1.Y = shadowVertex2.Y - shadowVertex1.Y;
-                            v2.X = samplePoints[j].X - shadowVertex1.X;
-                            v2.Y = samplePoints[j].Y - shadowVertex1.Y;
-                            // Compute dot products
-                            float dot00 = v0.X * v0.X + v0.Y * v0.Y;
-                            float dot01 = v0.X * v1.X + v0.Y * v1.Y;
-                            float dot02 = v0.X * v2.X + v0.Y * v2.Y;
-                            float dot11 = v1.X * v1.X + v1.Y * v1.Y;
-                            float dot12 = v1.X * v2.X + v1.Y * v2.Y;
-                            // Compute barycentric coordinates
-                            float invDenom = 1.0f / (dot00 * dot11 - dot01 * dot01);
-                            float u = (dot11 * dot02 - dot01 * dot12) * invDenom;
-                            // Check if the point is in triangle
-                            if (u < 0.0f) { continue; }
-                            float v = (dot00 * dot12 - dot01 * dot02) * invDenom;
-                            if (v >= 0.0f && (u + v) < 1.0f)
+                            if ((shadowVertex2.Y > samplePoints[i].Y) != (shadowVertex1.Y > samplePoints[i].Y)
+                                    && samplePoints[i].X < (shadowVertex1.X - shadowVertex2.X) * (samplePoints[i].Y - shadowVertex2.Y)
+                                                                / (shadowVertex1.Y - shadowVertex2.Y) + shadowVertex2.X)
+                            {
+                                isInShadowCache[i] = !isInShadowCache[i];
+                            }
+
+                            if ((shadowVertex3.Y > samplePoints[i].Y) != (shadowVertex2.Y > samplePoints[i].Y)
+                                    && samplePoints[i].X < (shadowVertex2.X - shadowVertex3.X) * (samplePoints[i].Y - shadowVertex3.Y)
+                                                                / (shadowVertex2.Y - shadowVertex3.Y) + shadowVertex3.X)
+                            {
+                                isInShadowCache[i] = !isInShadowCache[i];
+                            }
+
+                            if ((shadowVertex4.Y > samplePoints[i].Y) != (shadowVertex3.Y > samplePoints[i].Y)
+                                    && samplePoints[i].X < (shadowVertex3.X - shadowVertex4.X) * (samplePoints[i].Y - shadowVertex4.Y)
+                                                                / (shadowVertex3.Y - shadowVertex4.Y) + shadowVertex4.X)
+                            {
+                                isInShadowCache[i] = !isInShadowCache[i];
+                            }
+
+                            if ((shadowVertex1.Y > samplePoints[i].Y) != (shadowVertex4.Y > samplePoints[i].Y)
+                                    && samplePoints[i].X < (shadowVertex4.X - shadowVertex1.X) * (samplePoints[i].Y - shadowVertex1.Y)
+                                                                / (shadowVertex4.Y - shadowVertex1.Y) + shadowVertex1.X)
+                            {
+                                isInShadowCache[i] = !isInShadowCache[i];
+                            }
+
+                            if (isInShadowCache[i])
                             {
                                 numSamplesInShadow++;
-                                isInShadowCache[j] = true;
                                 if (numSamplesInShadow == SampleNumber)
                                 {
-                                    convexHulls.RemoveAt(i);
+                                    convexHulls.RemoveAt(ch_index);
                                     goto ALL_SAMPLES_IN_SHADOW;
                                 }
                                 break;
@@ -361,42 +370,50 @@ namespace Whosyouradddy.ShadowCulling
                     {
                         if (!itemAABB.Intersects(chShadowAABBCache[hull])) { continue; }
 
+                        int vertexCount = hull.ShadowVertexCount;
+
                         for (int i = 0; i < SampleNumber; i++)
                         {
                             if (_isInShadowCache[i]) { continue; }
 
-                            int vertexCount = hull.ShadowVertexCount;
-
-                            for (int j = 0; j < vertexCount; j += 3)
+                            for (int k = 0; k < vertexCount; k += 6)
                             {
-                                ref readonly Vector3 shadowVertex1 = ref hull.ShadowVertices[j].Position;
-                                ref readonly Vector3 shadowVertex2 = ref hull.ShadowVertices[j + 1].Position;
-                                ref readonly Vector3 shadowVertex3 = ref hull.ShadowVertices[j + 2].Position;
-                                Vector2 v0, v1, v2;
+                                ref readonly Vector3 shadowVertex1 = ref hull.ShadowVertices[k].Position;
+                                ref readonly Vector3 shadowVertex2 = ref hull.ShadowVertices[k + 1].Position;
+                                ref readonly Vector3 shadowVertex3 = ref hull.ShadowVertices[k + 4].Position;
+                                ref readonly Vector3 shadowVertex4 = ref hull.ShadowVertices[k + 5].Position;
 
-                                // Compute vectors
-                                v0.X = shadowVertex3.X - shadowVertex1.X;
-                                v0.Y = shadowVertex3.Y - shadowVertex1.Y;
-                                v1.X = shadowVertex2.X - shadowVertex1.X;
-                                v1.Y = shadowVertex2.Y - shadowVertex1.Y;
-                                v2.X = _samplePoints[i].X - shadowVertex1.X;
-                                v2.Y = _samplePoints[i].Y - shadowVertex1.Y;
-                                // Compute dot products
-                                float dot00 = v0.X * v0.X + v0.Y * v0.Y;
-                                float dot01 = v0.X * v1.X + v0.Y * v1.Y;
-                                float dot02 = v0.X * v2.X + v0.Y * v2.Y;
-                                float dot11 = v1.X * v1.X + v1.Y * v1.Y;
-                                float dot12 = v1.X * v2.X + v1.Y * v2.Y;
-                                // Compute barycentric coordinates
-                                float invDenom = 1.0f / (dot00 * dot11 - dot01 * dot01);
-                                float u = (dot11 * dot02 - dot01 * dot12) * invDenom;
-                                // Check if the point is in triangle
-                                if (u < 0.0f) { continue; }
-                                float v = (dot00 * dot12 - dot01 * dot02) * invDenom;
-                                if (v >= 0.0f && (u + v) < 1.0f)
+                                if ((shadowVertex2.Y > _samplePoints[i].Y) != (shadowVertex1.Y > _samplePoints[i].Y)
+                                        && _samplePoints[i].X < (shadowVertex1.X - shadowVertex2.X) * (_samplePoints[i].Y - shadowVertex2.Y)
+                                                                    / (shadowVertex1.Y - shadowVertex2.Y) + shadowVertex2.X)
+                                {
+                                    _isInShadowCache[i] = !_isInShadowCache[i];
+                                }
+
+                                if ((shadowVertex3.Y > _samplePoints[i].Y) != (shadowVertex2.Y > _samplePoints[i].Y)
+                                        && _samplePoints[i].X < (shadowVertex2.X - shadowVertex3.X) * (_samplePoints[i].Y - shadowVertex3.Y)
+                                                                    / (shadowVertex2.Y - shadowVertex3.Y) + shadowVertex3.X)
+                                {
+                                    _isInShadowCache[i] = !_isInShadowCache[i];
+                                }
+
+                                if ((shadowVertex4.Y > _samplePoints[i].Y) != (shadowVertex3.Y > _samplePoints[i].Y)
+                                        && _samplePoints[i].X < (shadowVertex3.X - shadowVertex4.X) * (_samplePoints[i].Y - shadowVertex4.Y)
+                                                                    / (shadowVertex3.Y - shadowVertex4.Y) + shadowVertex4.X)
+                                {
+                                    _isInShadowCache[i] = !_isInShadowCache[i];
+                                }
+
+                                if ((shadowVertex1.Y > _samplePoints[i].Y) != (shadowVertex4.Y > _samplePoints[i].Y)
+                                        && _samplePoints[i].X < (shadowVertex4.X - shadowVertex1.X) * (_samplePoints[i].Y - shadowVertex1.Y)
+                                                                    / (shadowVertex4.Y - shadowVertex1.Y) + shadowVertex1.X)
+                                {
+                                    _isInShadowCache[i] = !_isInShadowCache[i];
+                                }
+
+                                if (_isInShadowCache[i])
                                 {
                                     numSamplesInShadow++;
-                                    _isInShadowCache[i] = true;
                                     if (numSamplesInShadow == SampleNumber)
                                     {
                                         item.Visible = false;
