@@ -432,5 +432,23 @@ namespace Whosyouradddy.ShadowCulling
 
             dirtyCulling = true;
         }
+
+        // The drawing of light is managed by the LightManager,
+        // and its rendering is independent of culling,
+        // so we do not need to use its DrawSize to calculate the AABB.
+        [HarmonyPatch(
+             declaringType: typeof(LightComponent),
+             methodName: nameof(LightComponent.DrawSize),
+             methodType: MethodType.Getter
+        )]
+        class LightComponent_DrawSize
+        {
+            static bool Prefix(ref Vector2 __result)
+            {
+                __result.X = 0.0f;
+                __result.Y = 0.0f;
+                return false;
+            }
+        }
     }
 }
