@@ -7,11 +7,11 @@ During rendering, items occluded by shadows are ignored, which significantly red
 
 [hr][/hr]
 [h2]剔除 | Culling | Отсечение[/h2]
-五点采样，剔除中心、轴对齐包围盒四顶点都位于阴影中的物品。
+五点采样，剔除中心、轴对齐包围盒四顶点都位于阴影中的物品，同时运用阴影预测手段来减少物体闪烁现象。
 
-Five-point sampling is used to cull items whose center and all four vertices of the axis-aligned bounding box are located within shadows.
+Five-point sampling is employed to cull objects whose center and all four vertices of the axis-aligned bounding box are located within shadowed areas, while shadow prediction is applied to reduce object flickering.
 
-Используется пятиточечная выборка для отсечения объектов, у которых и центр, и все четыре вершины ограничивающего параллелепипеда (AABB) находятся в тенях.
+Используется пятиточечная выборка для отбраковки объектов, у которых центр и все четыре вершины выровненного по осям ограничивающего параллелепипеда (AABB) находятся в затенённых областях, а также применяется прогнозирование теней для уменьшения мерцания объектов.
 
 [hr][/hr]
 [h2]优化细节 | Optimize details | Оптимизировать детали[/h2]

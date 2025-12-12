@@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using Barotrauma;
+using Barotrauma.Extensions;
 using Barotrauma.Items.Components;
 using Barotrauma.Lights;
 using HarmonyLib;
@@ -79,7 +80,7 @@ namespace Whosyouradddy.ShadowCulling
                                     cam.WorldToScreen(new Vector2(extents.Left, extents.Bottom)),
                                 },
                                 item.Visible ? Color.LightBlue : new(Color.LightBlue, 0.5f),
-                                depth: 0.0004f,
+                                depth: 0.04f,
                                 thickness: 2.0f
                             );
 
@@ -98,7 +99,7 @@ namespace Whosyouradddy.ShadowCulling
                                         cam.WorldToScreen(new Vector2(cachedExtents.X, cachedExtents.Y + cachedExtents.Height * 2)),
                                     },
                                     item.Visible ? Color.LightYellow : new(Color.LightYellow, 0.2f),
-                                    depth: 0.0005f,
+                                    depth: 0.05f,
                                     thickness: 3.0f
                                 );
                             }
@@ -111,6 +112,7 @@ namespace Whosyouradddy.ShadowCulling
         private const int SampleNumber = 5;
         private static int ItemsPerBatch = 75;
         private const double CullInterval = 0.05;
+        private const float CullPredtiveTolerance = 5000.0f;
         private static double prevCullTime;
         private static double prevShowPerf;
         private static bool dirtyCulling = false;
@@ -122,6 +124,7 @@ namespace Whosyouradddy.ShadowCulling
         private static Rectangle[] convexHullShadowAABBCache = new Rectangle[CacheSize];
         private static ShadowVectors[] convexHullShadowVectorsCache = new ShadowVectors[CacheSize];
         private static List<Item> itemsToProcess = new(10000);
+        private static Vector2 PreviousViewPosition;
 
         private static readonly object counterLock = new();
 
@@ -139,9 +142,15 @@ namespace Whosyouradddy.ShadowCulling
                         item.Visible = true;
                     });
                     dirtyCulling = false;
+                    PreviousViewPosition = Vector2.Zero;
                 }
                 return;
             }
+
+            if (PreviousViewPosition == Vector2.Zero) { PreviousViewPosition = viewTarget.Position; }
+            Vector2 viewPosition = Timing.Interpolate(PreviousViewPosition, viewTarget.Position);
+            Vector2 dir = viewPosition - PreviousViewPosition;
+            PreviousViewPosition = viewPosition;
 
             if (prevCullTime > Timing.TotalTime - CullInterval) { return; }
 
@@ -176,6 +185,12 @@ namespace Whosyouradddy.ShadowCulling
                     if (chAABB.X + chAABB.Width < viewRect.X) { continue; }
                     if (chAABB.Y < viewRect.Y - viewRect.Height) { continue; }
                     if (chAABB.Y - chAABB.Height > viewRect.Y) { continue; }
+
+                    if (hull.ParentEntity is Item item
+                        && item.GetComponent<Door>() is Door { IsOpen: true, OpenState: < 1.0f })
+                    {
+                        continue;
+                    }
 
                     preFilteredConvexHulls.AddLast((hull, chAABB));
                 }
@@ -278,53 +293,60 @@ namespace Whosyouradddy.ShadowCulling
             {
                 ConvexHull hull = convexHullCache[ch_index];
                 VertexPositionColor[] vertices = hull.ShadowVertices;
-                ref readonly Vector3 vertex_0 = ref vertices[0].Position;
-                ref readonly Vector3 vertex_1 = ref vertices[1].Position;
-                ref readonly Vector3 vertex_4 = ref vertices[4].Position;
-                ref readonly Vector3 vertex_5 = ref vertices[5].Position;
+                Vector2 vertex_0 = new(vertices[0].Position.X, vertices[0].Position.Y); // vertexPos1
+                Vector2 vertex_1 = new(vertices[1].Position.X, vertices[1].Position.Y); // vertexPos0
+                Vector2 vertex_4 = new(vertices[4].Position.X, vertices[4].Position.Y); // extruded0
+                Vector2 vertex_5 = new(vertices[5].Position.X, vertices[5].Position.Y); // extruded1
 
-                // Cache data for the upcoming vector cross product directionality detection
-                // true if ShadowVertices is not reversed
-                if ((vertex_1 - vertex_0).LengthSquared() < (vertex_5 - vertex_4).LengthSquared())
+                Vector2 v_01 = vertex_1 - vertex_0;
+                Vector2 v_54 = vertex_4 - vertex_5;
+                float length_01 = v_01.Length();
+                float length_54 = v_54.Length();
+
+                // true if ShadowVertices is reversed, we just reverse back.
+                if (length_01 > length_54)
                 {
-                    convexHullShadowVectorsCache[ch_index] = new ShadowVectors
-                    {
-                        V1_X = vertex_0.X - vertex_5.X,
-                        V1_Y = vertex_0.Y - vertex_5.Y,
-                        V1_Start_X = vertex_5.X,
-                        V1_Start_Y = vertex_5.Y,
-
-                        V2_X = vertex_1.X - vertex_0.X,
-                        V2_Y = vertex_1.Y - vertex_0.Y,
-                        V2_Start_X = vertex_0.X,
-                        V2_Start_Y = vertex_0.Y,
-
-                        V3_X = vertex_4.X - vertex_1.X,
-                        V3_Y = vertex_4.Y - vertex_1.Y,
-                        V3_Start_X = vertex_1.X,
-                        V3_Start_Y = vertex_1.Y,
-                    };
+                    (vertex_0, vertex_5) = (vertex_5, vertex_0);
+                    (vertex_1, vertex_4) = (vertex_4, vertex_1);
+                    v_01 = v_54;
+                    length_01 = length_54;
                 }
-                else
+
+                // Calculate the shadow tolerance based on the view's predicted position to avoid "face-close loading".
+                if (GetLineIntersection(in vertex_5, in vertex_0, in vertex_4, in vertex_1, areLinesInfinite: true, out Vector2 intersection))
                 {
-                    convexHullShadowVectorsCache[ch_index] = new ShadowVectors
+                    Vector2 prediction = intersection + dir;
+                    float maxTrim = length_01 - 1.0f;
+                    if (Vector2.Dot(v_01, dir) < 0)
                     {
-                        V1_X = vertex_5.X - vertex_0.X,
-                        V1_Y = vertex_5.Y - vertex_0.Y,
-                        V1_Start_X = vertex_0.X,
-                        V1_Start_Y = vertex_0.Y,
-
-                        V2_X = vertex_4.X - vertex_5.X,
-                        V2_Y = vertex_4.Y - vertex_5.Y,
-                        V2_Start_X = vertex_5.X,
-                        V2_Start_Y = vertex_5.Y,
-
-                        V3_X = vertex_1.X - vertex_4.X,
-                        V3_Y = vertex_1.Y - vertex_4.Y,
-                        V3_Start_X = vertex_4.X,
-                        V3_Start_Y = vertex_4.Y,
-                    };
+                        float offset_01_l = MathF.Min(MathF.Abs(PredictAngleChange(in vertex_0, in intersection, in prediction)) * CullPredtiveTolerance, maxTrim);
+                        vertex_0 += Vector2.Normalize(v_01) * offset_01_l;
+                    }
+                    else
+                    {
+                        float offset_10_l = MathF.Min(MathF.Abs(PredictAngleChange(in vertex_1, in intersection, in prediction)) * CullPredtiveTolerance, maxTrim);
+                        vertex_1 += Vector2.Normalize(-v_01) * offset_10_l;
+                    }
                 }
+
+                // Cache data for the upcoming vector cross product directionality detection.
+                convexHullShadowVectorsCache[ch_index] = new ShadowVectors
+                {
+                    V1_X = vertex_0.X - vertex_5.X,
+                    V1_Y = vertex_0.Y - vertex_5.Y,
+                    V1_Start_X = vertex_5.X,
+                    V1_Start_Y = vertex_5.Y,
+
+                    V2_X = vertex_1.X - vertex_0.X,
+                    V2_Y = vertex_1.Y - vertex_0.Y,
+                    V2_Start_X = vertex_0.X,
+                    V2_Start_Y = vertex_0.Y,
+
+                    V3_X = vertex_4.X - vertex_1.X,
+                    V3_Y = vertex_4.Y - vertex_1.Y,
+                    V3_Start_X = vertex_1.X,
+                    V3_Start_Y = vertex_1.Y,
+                };
 
                 // Cache the AABB of the convex hull's shadow
                 float minX = MathF.Min(MathF.Min(vertex_0.X, vertex_1.X), MathF.Min(vertex_4.X, vertex_5.X));
@@ -477,6 +499,51 @@ namespace Whosyouradddy.ShadowCulling
             float V1_X, float V1_Y, float V1_Start_X, float V1_Start_Y,
             float V2_X, float V2_Y, float V2_Start_X, float V2_Start_Y,
             float V3_X, float V3_Y, float V3_Start_X, float V3_Start_Y);
+
+        public static float PredictAngleChange(
+            in Vector2 datum,
+            in Vector2 p1,
+            in Vector2 p2)
+        {
+            Vector2 v1 = p1 - datum;
+            Vector2 v2 = p2 - datum;
+
+            return MathUtils.WrapAnglePi(MathF.Atan2(v2.Y, v2.X) - MathF.Atan2(v1.Y, v1.X));
+        }
+
+        public static bool GetLineIntersection(
+            in Vector2 a1, in Vector2 a2,
+            in Vector2 b1, in Vector2 b2,
+            bool areLinesInfinite, out Vector2 intersection)
+        {
+            intersection = Vector2.Zero;
+            Vector2 vector = a2 - a1;
+            Vector2 vector2 = b2 - b1;
+            float num = vector.X * vector2.Y - vector.Y * vector2.X;
+            if (num == 0f)
+            {
+                return false;
+            }
+
+            Vector2 vector3 = b1 - a1;
+            float num2 = (vector3.X * vector2.Y - vector3.Y * vector2.X) / num;
+            if (!areLinesInfinite)
+            {
+                if (num2 < 0f || num2 > 1f)
+                {
+                    return false;
+                }
+
+                float num3 = (vector3.X * vector.Y - vector3.Y * vector.X) / num;
+                if (num3 < 0f || num3 > 1f)
+                {
+                    return false;
+                }
+            }
+
+            intersection = a1 + num2 * vector;
+            return true;
+        }
 
         // The drawing of light is managed by the LightManager,
         // and its rendering is independent of culling,
