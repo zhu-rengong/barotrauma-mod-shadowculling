@@ -1,9 +1,11 @@
 ﻿using System;
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.Metrics;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using Barotrauma;
@@ -113,9 +115,12 @@ namespace Whosyouradddy.ShadowCulling
         private static double prevShowPerf;
         private static bool dirtyCulling = false;
 
-        private static List<ConvexHull> convexHulls = new(100);
-        private static Dictionary<ConvexHull, Rectangle> chAABBCache = new(100);
-        private static ConcurrentDictionary<ConvexHull, Rectangle> chShadowAABBCache = new();
+        private const int CacheSize = 8192;
+        private static ConvexHull[] convexHullCache = new ConvexHull[CacheSize];
+        private static LinkedList<(ConvexHull Hull, Rectangle AABB)> preFilteredConvexHulls = new();
+        private static Rectangle[] convexHullAABBCache = new Rectangle[CacheSize];
+        private static Rectangle[] convexHullShadowAABBCache = new Rectangle[CacheSize];
+        private static ShadowVectors[] convexHullShadowVectorsCache = new ShadowVectors[CacheSize];
         private static List<Item> itemsToProcess = new(10000);
 
         private static readonly object counterLock = new();
@@ -145,10 +150,8 @@ namespace Whosyouradddy.ShadowCulling
 
             Span<Vector2> samplePoints = stackalloc Vector2[SampleNumber];
             Span<bool> isInShadowCache = stackalloc bool[SampleNumber];
+            preFilteredConvexHulls.Clear();
 
-            convexHulls.Clear();
-            chAABBCache.Clear();
-            chShadowAABBCache.Clear();
             Rectangle viewRect = camera.WorldView;
 
             // Get the convex hulls that intersect with the camera viewport
@@ -156,7 +159,7 @@ namespace Whosyouradddy.ShadowCulling
             {
                 foreach (ConvexHull hull in chList.List)
                 {
-                    if (hull.IsInvalid || !hull.Enabled) { continue; }
+                    if (hull.IsInvalid || !hull.Enabled || hull.ShadowVertexCount < 6) { continue; }
 
                     Rectangle chAABB = hull.BoundingBox;
                     // In the world coordinate, the origin of the ConvexHull.BoundingBox is assumed to be left-bottom corner(perhaps due to historical reasons?)
@@ -174,36 +177,18 @@ namespace Whosyouradddy.ShadowCulling
                     if (chAABB.Y < viewRect.Y - viewRect.Height) { continue; }
                     if (chAABB.Y - chAABB.Height > viewRect.Y) { continue; }
 
-                    convexHulls.Add(hull);
-
-                    // Cache the AABB of the convex hull
-                    chAABBCache[hull] = chAABB;
-
-                    // Cache the AABB of the convex hull's shadow
-                    VertexPositionColor[] vertices = hull.ShadowVertices;
-                    int vertexCount = hull.ShadowVertexCount;
-                    float minX = float.MaxValue, minY = float.MaxValue;
-                    float maxX = float.MinValue, maxY = float.MinValue;
-
-                    for (int j = 0; j < vertexCount; j++)
-                    {
-                        ref readonly Vector3 pos = ref vertices[j].Position;
-                        float posX = pos.X, posY = pos.Y;
-                        if (posX < minX) { minX = posX; }
-                        if (posX > maxX) { maxX = posX; }
-                        if (posY < minY) { minY = posY; }
-                        if (posY > maxY) { maxY = posY; }
-                    }
-
-                    chShadowAABBCache[hull] = new Rectangle((int)minX, (int)minY, Math.Abs((int)maxX - (int)minX), Math.Abs((int)maxY - (int)minY));
+                    preFilteredConvexHulls.AddLast((hull, chAABB));
                 }
             }
 
             // Exclude the convex hulls whose sample points are all in shadow
-            for (int ch_index = convexHulls.Count - 1; ch_index >= 0; ch_index--)
+            int length = 0;
+            LinkedListNode<(ConvexHull Hull, Rectangle AABB)>? currentNode = preFilteredConvexHulls.First;
+            while (currentNode != null)
             {
-                ConvexHull current = convexHulls[ch_index];
-                Rectangle chAABB = chAABBCache[current];
+                var nextNode = currentNode.Next;
+                ConvexHull current = currentNode.Value.Hull;
+                Rectangle chAABB = currentNode.Value.AABB;
 
                 // center
                 samplePoints[0].X = chAABB.X + chAABB.Width / 2;
@@ -224,66 +209,129 @@ namespace Whosyouradddy.ShadowCulling
                 int numSamplesInShadow = 0;
                 isInShadowCache.Fill(false);
 
-                foreach (var hull in convexHulls)
+                LinkedListNode<(ConvexHull Hull, Rectangle)>? node = preFilteredConvexHulls.First;
+                while (node != null)
                 {
-                    if (!chAABB.Intersects(chShadowAABBCache[hull])) { continue; }
+                    if (node == currentNode) { goto NEXT_NODE; }
 
-                    int vertexCount = hull.ShadowVertexCount;
+                    ConvexHull hull = node.Value.Hull;
 
                     for (int i = 0; i < SampleNumber; i++)
                     {
                         if (isInShadowCache[i]) { continue; }
 
                         // Ray casting test
-                        for (int k = 0; k < vertexCount; k += 6)
+                        ref readonly Vector3 vertex_0 = ref hull.ShadowVertices[0].Position; // vertexPos1
+                        ref readonly Vector3 vertex_1 = ref hull.ShadowVertices[1].Position; // vertexPos0
+                        ref readonly Vector3 vertex_4 = ref hull.ShadowVertices[4].Position; // extruded0
+                        ref readonly Vector3 vertex_5 = ref hull.ShadowVertices[5].Position; // extruded1
+
+                        if ((vertex_1.Y > samplePoints[i].Y) != (vertex_0.Y > samplePoints[i].Y)
+                                && samplePoints[i].X < (vertex_0.X - vertex_1.X) * (samplePoints[i].Y - vertex_1.Y)
+                                                        / (vertex_0.Y - vertex_1.Y) + vertex_1.X)
                         {
-                            ref readonly Vector3 shadowVertex1 = ref hull.ShadowVertices[k].Position;
-                            ref readonly Vector3 shadowVertex2 = ref hull.ShadowVertices[k + 1].Position;
-                            ref readonly Vector3 shadowVertex3 = ref hull.ShadowVertices[k + 4].Position;
-                            ref readonly Vector3 shadowVertex4 = ref hull.ShadowVertices[k + 5].Position;
+                            isInShadowCache[i] = !isInShadowCache[i];
+                        }
 
-                            if ((shadowVertex2.Y > samplePoints[i].Y) != (shadowVertex1.Y > samplePoints[i].Y)
-                                    && samplePoints[i].X < (shadowVertex1.X - shadowVertex2.X) * (samplePoints[i].Y - shadowVertex2.Y)
-                                                                / (shadowVertex1.Y - shadowVertex2.Y) + shadowVertex2.X)
-                            {
-                                isInShadowCache[i] = !isInShadowCache[i];
-                            }
+                        if ((vertex_4.Y > samplePoints[i].Y) != (vertex_1.Y > samplePoints[i].Y)
+                                && samplePoints[i].X < (vertex_1.X - vertex_4.X) * (samplePoints[i].Y - vertex_4.Y)
+                                                        / (vertex_1.Y - vertex_4.Y) + vertex_4.X)
+                        {
+                            isInShadowCache[i] = !isInShadowCache[i];
+                        }
 
-                            if ((shadowVertex3.Y > samplePoints[i].Y) != (shadowVertex2.Y > samplePoints[i].Y)
-                                    && samplePoints[i].X < (shadowVertex2.X - shadowVertex3.X) * (samplePoints[i].Y - shadowVertex3.Y)
-                                                                / (shadowVertex2.Y - shadowVertex3.Y) + shadowVertex3.X)
-                            {
-                                isInShadowCache[i] = !isInShadowCache[i];
-                            }
+                        if ((vertex_5.Y > samplePoints[i].Y) != (vertex_4.Y > samplePoints[i].Y)
+                                && samplePoints[i].X < (vertex_4.X - vertex_5.X) * (samplePoints[i].Y - vertex_5.Y)
+                                                        / (vertex_4.Y - vertex_5.Y) + vertex_5.X)
+                        {
+                            isInShadowCache[i] = !isInShadowCache[i];
+                        }
 
-                            if ((shadowVertex4.Y > samplePoints[i].Y) != (shadowVertex3.Y > samplePoints[i].Y)
-                                    && samplePoints[i].X < (shadowVertex3.X - shadowVertex4.X) * (samplePoints[i].Y - shadowVertex4.Y)
-                                                                / (shadowVertex3.Y - shadowVertex4.Y) + shadowVertex4.X)
-                            {
-                                isInShadowCache[i] = !isInShadowCache[i];
-                            }
+                        if ((vertex_0.Y > samplePoints[i].Y) != (vertex_5.Y > samplePoints[i].Y)
+                                && samplePoints[i].X < (vertex_5.X - vertex_0.X) * (samplePoints[i].Y - vertex_0.Y)
+                                                        / (vertex_5.Y - vertex_0.Y) + vertex_0.X)
+                        {
+                            isInShadowCache[i] = !isInShadowCache[i];
+                        }
 
-                            if ((shadowVertex1.Y > samplePoints[i].Y) != (shadowVertex4.Y > samplePoints[i].Y)
-                                    && samplePoints[i].X < (shadowVertex4.X - shadowVertex1.X) * (samplePoints[i].Y - shadowVertex1.Y)
-                                                                / (shadowVertex4.Y - shadowVertex1.Y) + shadowVertex1.X)
+                        if (isInShadowCache[i])
+                        {
+                            numSamplesInShadow++;
+                            if (numSamplesInShadow == SampleNumber)
                             {
-                                isInShadowCache[i] = !isInShadowCache[i];
-                            }
-
-                            if (isInShadowCache[i])
-                            {
-                                numSamplesInShadow++;
-                                if (numSamplesInShadow == SampleNumber)
-                                {
-                                    convexHulls.RemoveAt(ch_index);
-                                    goto ALL_SAMPLES_IN_SHADOW;
-                                }
-                                break;
+                                preFilteredConvexHulls.Remove(currentNode);
+                                goto ALL_SAMPLES_IN_SHADOW;
                             }
                         }
                     }
+                NEXT_NODE:
+                    node = node.Next;
                 }
+
+                convexHullCache[length++] = current;
             ALL_SAMPLES_IN_SHADOW:;
+
+                currentNode = nextNode;
+            }
+
+            for (int ch_index = 0; ch_index < length; ch_index++)
+            {
+                ConvexHull hull = convexHullCache[ch_index];
+                VertexPositionColor[] vertices = hull.ShadowVertices;
+                ref readonly Vector3 vertex_0 = ref vertices[0].Position;
+                ref readonly Vector3 vertex_1 = ref vertices[1].Position;
+                ref readonly Vector3 vertex_4 = ref vertices[4].Position;
+                ref readonly Vector3 vertex_5 = ref vertices[5].Position;
+
+                // Cache data for the upcoming vector cross product directionality detection
+                // true if ShadowVertices is not reversed
+                if ((vertex_1 - vertex_0).LengthSquared() < (vertex_5 - vertex_4).LengthSquared())
+                {
+                    convexHullShadowVectorsCache[ch_index] = new ShadowVectors
+                    {
+                        V1_X = vertex_0.X - vertex_5.X,
+                        V1_Y = vertex_0.Y - vertex_5.Y,
+                        V1_Start_X = vertex_5.X,
+                        V1_Start_Y = vertex_5.Y,
+
+                        V2_X = vertex_1.X - vertex_0.X,
+                        V2_Y = vertex_1.Y - vertex_0.Y,
+                        V2_Start_X = vertex_0.X,
+                        V2_Start_Y = vertex_0.Y,
+
+                        V3_X = vertex_4.X - vertex_1.X,
+                        V3_Y = vertex_4.Y - vertex_1.Y,
+                        V3_Start_X = vertex_1.X,
+                        V3_Start_Y = vertex_1.Y,
+                    };
+                }
+                else
+                {
+                    convexHullShadowVectorsCache[ch_index] = new ShadowVectors
+                    {
+                        V1_X = vertex_5.X - vertex_0.X,
+                        V1_Y = vertex_5.Y - vertex_0.Y,
+                        V1_Start_X = vertex_0.X,
+                        V1_Start_Y = vertex_0.Y,
+
+                        V2_X = vertex_4.X - vertex_5.X,
+                        V2_Y = vertex_4.Y - vertex_5.Y,
+                        V2_Start_X = vertex_5.X,
+                        V2_Start_Y = vertex_5.Y,
+
+                        V3_X = vertex_1.X - vertex_4.X,
+                        V3_Y = vertex_1.Y - vertex_4.Y,
+                        V3_Start_X = vertex_4.X,
+                        V3_Start_Y = vertex_4.Y,
+                    };
+                }
+
+                // Cache the AABB of the convex hull's shadow
+                float minX = MathF.Min(MathF.Min(vertex_0.X, vertex_1.X), MathF.Min(vertex_4.X, vertex_5.X));
+                float maxX = MathF.Max(MathF.Max(vertex_0.X, vertex_1.X), MathF.Max(vertex_4.X, vertex_5.X));
+                float minY = MathF.Min(MathF.Min(vertex_0.Y, vertex_1.Y), MathF.Min(vertex_4.Y, vertex_5.Y));
+                float maxY = MathF.Max(MathF.Max(vertex_0.Y, vertex_1.Y), MathF.Max(vertex_4.Y, vertex_5.Y));
+                convexHullShadowAABBCache[ch_index] = new Rectangle((int)minX, (int)minY, Math.Abs((int)maxX - (int)minX), Math.Abs((int)maxY - (int)minY));
             }
 
             itemsToProcess.Clear();
@@ -292,8 +340,8 @@ namespace Whosyouradddy.ShadowCulling
             {
                 if (mapEntity is not Item item
                     || item.IsHidden
-                    || item.GetComponent<Ladder>() is not null
-                    || item.cachedVisibleExtents is not Rectangle)
+                    || !item.cachedVisibleExtents.HasValue
+                    || item.GetComponent<Ladder>() is not null)
                 {
                     continue;
                 }
@@ -307,6 +355,7 @@ namespace Whosyouradddy.ShadowCulling
                 itemsToProcess.Add(item);
             }
 
+            // stopWatch.Stop();
             int processedCount = 0;
             Parallel.For(
                 fromInclusive: 0,
@@ -366,62 +415,32 @@ namespace Whosyouradddy.ShadowCulling
                     int numSamplesInShadow = 0;
                     _isInShadowCache.Fill(false);
 
-                    foreach (var hull in convexHulls)
+                    for (int ch_index = 0; ch_index < length; ch_index++)
                     {
-                        if (!itemAABB.Intersects(chShadowAABBCache[hull])) { continue; }
-
-                        int vertexCount = hull.ShadowVertexCount;
+                        ConvexHull hull = convexHullCache[ch_index];
+                        itemAABB.Intersects(ref convexHullShadowAABBCache[ch_index], out bool intersecting);
+                        if (!intersecting) { continue; }
 
                         for (int i = 0; i < SampleNumber; i++)
                         {
                             if (_isInShadowCache[i]) { continue; }
 
-                            for (int k = 0; k < vertexCount; k += 6)
+                            // Using the vector cross product for directional detection,
+                            // if the vectors from the shadow vertex to each sample point are all on the same side of the shadow vector,
+                            // then the sample point is within the shadow range.
+                            ref readonly ShadowVectors vectors = ref convexHullShadowVectorsCache[ch_index];
+                            // We prioritize detecting the vector (V2) on the shadow vertices rather than their extruded points.
+                            if ((_samplePoints[i].X - vectors.V2_Start_X) * vectors.V2_Y < (_samplePoints[i].Y - vectors.V2_Start_Y) * vectors.V2_X) { continue; }
+                            if ((_samplePoints[i].X - vectors.V1_Start_X) * vectors.V1_Y < (_samplePoints[i].Y - vectors.V1_Start_Y) * vectors.V1_X) { continue; }
+                            if ((_samplePoints[i].X - vectors.V3_Start_X) * vectors.V3_Y < (_samplePoints[i].Y - vectors.V3_Start_Y) * vectors.V3_X) { continue; }
+
+                            if (++numSamplesInShadow == SampleNumber)
                             {
-                                ref readonly Vector3 shadowVertex1 = ref hull.ShadowVertices[k].Position;
-                                ref readonly Vector3 shadowVertex2 = ref hull.ShadowVertices[k + 1].Position;
-                                ref readonly Vector3 shadowVertex3 = ref hull.ShadowVertices[k + 4].Position;
-                                ref readonly Vector3 shadowVertex4 = ref hull.ShadowVertices[k + 5].Position;
-
-                                if ((shadowVertex2.Y > _samplePoints[i].Y) != (shadowVertex1.Y > _samplePoints[i].Y)
-                                        && _samplePoints[i].X < (shadowVertex1.X - shadowVertex2.X) * (_samplePoints[i].Y - shadowVertex2.Y)
-                                                                    / (shadowVertex1.Y - shadowVertex2.Y) + shadowVertex2.X)
-                                {
-                                    _isInShadowCache[i] = !_isInShadowCache[i];
-                                }
-
-                                if ((shadowVertex3.Y > _samplePoints[i].Y) != (shadowVertex2.Y > _samplePoints[i].Y)
-                                        && _samplePoints[i].X < (shadowVertex2.X - shadowVertex3.X) * (_samplePoints[i].Y - shadowVertex3.Y)
-                                                                    / (shadowVertex2.Y - shadowVertex3.Y) + shadowVertex3.X)
-                                {
-                                    _isInShadowCache[i] = !_isInShadowCache[i];
-                                }
-
-                                if ((shadowVertex4.Y > _samplePoints[i].Y) != (shadowVertex3.Y > _samplePoints[i].Y)
-                                        && _samplePoints[i].X < (shadowVertex3.X - shadowVertex4.X) * (_samplePoints[i].Y - shadowVertex4.Y)
-                                                                    / (shadowVertex3.Y - shadowVertex4.Y) + shadowVertex4.X)
-                                {
-                                    _isInShadowCache[i] = !_isInShadowCache[i];
-                                }
-
-                                if ((shadowVertex1.Y > _samplePoints[i].Y) != (shadowVertex4.Y > _samplePoints[i].Y)
-                                        && _samplePoints[i].X < (shadowVertex4.X - shadowVertex1.X) * (_samplePoints[i].Y - shadowVertex1.Y)
-                                                                    / (shadowVertex4.Y - shadowVertex1.Y) + shadowVertex1.X)
-                                {
-                                    _isInShadowCache[i] = !_isInShadowCache[i];
-                                }
-
-                                if (_isInShadowCache[i])
-                                {
-                                    numSamplesInShadow++;
-                                    if (numSamplesInShadow == SampleNumber)
-                                    {
-                                        item.Visible = false;
-                                        goto ALL_SAMPLES_IN_SHADOW;
-                                    }
-                                    break;
-                                }
+                                item.Visible = false;
+                                goto ALL_SAMPLES_IN_SHADOW;
                             }
+
+                            _isInShadowCache[i] = true;
                         }
                     }
 
@@ -441,14 +460,23 @@ namespace Whosyouradddy.ShadowCulling
             if (DebugLog && Timing.TotalTime - prevShowPerf >= 2.0f)
             {
                 float average = GameMain.PerformanceCounter.GetAverageElapsedMillisecs("Mod:ShadowCulling");
-                LuaCsLogger.LogMessage($"Mod:ShadowCulling | Mean: {average} | Cull: {processedCount}/{Submarine.VisibleEntities.Count()} | Hulls: {convexHulls.Count}");
+                LuaCsLogger.LogMessage($"Mod:ShadowCulling | Mean: {average} | Cull: {processedCount}/{Submarine.VisibleEntities.Count()} | Hulls: {length}");
                 prevShowPerf = Timing.TotalTime;
             }
 
             prevCullTime = Timing.TotalTime;
 
             dirtyCulling = true;
+
         }
+
+        // V1: extruded1 => vertexPos1
+        // V2: vertexPos1 => vertexPos0
+        // V3: vertexPos0 => extruded0
+        public readonly record struct ShadowVectors(
+            float V1_X, float V1_Y, float V1_Start_X, float V1_Start_Y,
+            float V2_X, float V2_Y, float V2_Start_X, float V2_Start_Y,
+            float V3_X, float V3_Y, float V3_Start_X, float V3_Start_Y);
 
         // The drawing of light is managed by the LightManager,
         // and its rendering is independent of culling,
