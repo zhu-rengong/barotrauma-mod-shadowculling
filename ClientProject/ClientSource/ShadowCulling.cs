@@ -2,11 +2,13 @@
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Barotrauma;
 using Barotrauma.Extensions;
@@ -126,6 +128,10 @@ namespace Whosyouradddy.ShadowCulling
         private static List<Item> itemsToProcess = new(10000);
         private static Vector2 PreviousViewPosition;
 
+        private static ParallelOptions parallelOptions = new() { MaxDegreeOfParallelism = 8 };
+
+        private static Stopwatch stopwatch = new();
+
         private static readonly object counterLock = new();
 
         public static void CullEntities()
@@ -154,8 +160,7 @@ namespace Whosyouradddy.ShadowCulling
 
             if (prevCullTime > Timing.TotalTime - CullInterval) { return; }
 
-            var stopWatch = new System.Diagnostics.Stopwatch();
-            stopWatch.Start();
+            stopwatch.Restart();
 
             Span<Vector2> samplePoints = stackalloc Vector2[SampleNumber];
             Span<bool> isInShadowCache = stackalloc bool[SampleNumber];
@@ -187,7 +192,7 @@ namespace Whosyouradddy.ShadowCulling
                     if (chAABB.Y - chAABB.Height > viewRect.Y) { continue; }
 
                     if (hull.ParentEntity is Item item
-                        && item.GetComponent<Door>() is Door { IsOpen: true, OpenState: < 1.0f })
+                        && item.GetComponent<Door>() is Door { IsOpen: true })
                     {
                         continue;
                     }
@@ -196,6 +201,7 @@ namespace Whosyouradddy.ShadowCulling
                 }
             }
 
+            int totalHulls = preFilteredConvexHulls.Count;
             // Exclude the convex hulls whose sample points are all in shadow
             int length = 0;
             LinkedListNode<(ConvexHull Hull, Rectangle AABB)>? currentNode = preFilteredConvexHulls.First;
@@ -203,7 +209,7 @@ namespace Whosyouradddy.ShadowCulling
             {
                 var nextNode = currentNode.Next;
                 ConvexHull current = currentNode.Value.Hull;
-                Rectangle chAABB = currentNode.Value.AABB;
+                ref readonly Rectangle chAABB = ref currentNode.ValueRef.AABB;
 
                 // center
                 samplePoints[0].X = chAABB.X + chAABB.Width / 2;
@@ -357,32 +363,25 @@ namespace Whosyouradddy.ShadowCulling
             }
 
             itemsToProcess.Clear();
-
             foreach (var mapEntity in Submarine.VisibleEntities)
             {
                 if (mapEntity is not Item item
                     || item.IsHidden
                     || !item.cachedVisibleExtents.HasValue
-                    || item.GetComponent<Ladder>() is not null)
+                    || item.IsLadder
+                    || item.isWire)
                 {
-                    continue;
-                }
-
-                if (item.GetComponent<Wire>() is { Drawable: true })
-                {
-                    item.Visible = true;
                     continue;
                 }
 
                 itemsToProcess.Add(item);
             }
 
-            // stopWatch.Stop();
             int processedCount = 0;
             Parallel.For(
                 fromInclusive: 0,
                 toExclusive: (itemsToProcess.Count + ItemsPerBatch - 1) / ItemsPerBatch,
-                parallelOptions: new ParallelOptions { MaxDegreeOfParallelism = 8 },
+                parallelOptions: parallelOptions,
                 body: BatchProcessing
             );
 
@@ -393,6 +392,8 @@ namespace Whosyouradddy.ShadowCulling
 
                 Span<Vector2> _samplePoints = stackalloc Vector2[SampleNumber];
                 Span<bool> _isInShadowCache = stackalloc bool[SampleNumber];
+
+                int _processedCount = 0;
 
                 for (int itemIndex = start; itemIndex < end; itemIndex++)
                 {
@@ -439,7 +440,6 @@ namespace Whosyouradddy.ShadowCulling
 
                     for (int ch_index = 0; ch_index < length; ch_index++)
                     {
-                        ConvexHull hull = convexHullCache[ch_index];
                         itemAABB.Intersects(ref convexHullShadowAABBCache[ch_index], out bool intersecting);
                         if (!intersecting) { continue; }
 
@@ -468,21 +468,19 @@ namespace Whosyouradddy.ShadowCulling
 
                     item.Visible = true;
                 ALL_SAMPLES_IN_SHADOW:
-
-                    lock (counterLock)
-                    {
-                        processedCount++;
-                    }
+                    _processedCount++;
                 }
+
+                Interlocked.Add(ref processedCount, _processedCount);
             }
 
-            stopWatch.Stop();
-            GameMain.PerformanceCounter.AddElapsedTicks("Mod:ShadowCulling", stopWatch.ElapsedTicks);
+            stopwatch.Stop();
+            GameMain.PerformanceCounter.AddElapsedTicks("Mod:ShadowCulling", stopwatch.ElapsedTicks);
 
             if (DebugLog && Timing.TotalTime - prevShowPerf >= 2.0f)
             {
                 float average = GameMain.PerformanceCounter.GetAverageElapsedMillisecs("Mod:ShadowCulling");
-                LuaCsLogger.LogMessage($"Mod:ShadowCulling | Mean: {average} | Cull: {processedCount}/{Submarine.VisibleEntities.Count()} | Hulls: {length}");
+                LuaCsLogger.LogMessage($"Mod:ShadowCulling | Mean: {average} | Cull: {processedCount}/{Submarine.VisibleEntities.Count()} | Hulls: {length}/{totalHulls}");
                 prevShowPerf = Timing.TotalTime;
             }
 
