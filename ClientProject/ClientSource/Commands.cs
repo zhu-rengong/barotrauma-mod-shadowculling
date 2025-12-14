@@ -27,7 +27,7 @@ namespace Whosyouradddy.ShadowCulling
         {
             AddedCommands.Add(new DebugConsole.Command("shadowcullingdebugonce", "", (string[] args) =>
             {
-                CullEntities();
+                PerformEntityCulling();
             }, isCheat: false));
 
             AddedCommands.Add(new DebugConsole.Command("shadowcullingtoggle", "", (string[] args) =>
@@ -45,15 +45,6 @@ namespace Whosyouradddy.ShadowCulling
             AddedCommands.Add(new DebugConsole.Command("shadowcullingdebugdrawaabb", "", (string[] args) =>
             {
                 DebugDrawAABB = !DebugDrawAABB;
-            }, isCheat: false));
-
-            AddedCommands.Add(new DebugConsole.Command("shadowcullingitemsperbatch", "", (string[] args) =>
-            {
-                if (args.Length > 0 && int.TryParse(args[0], out int itemsPerBatch) && itemsPerBatch > 0)
-                {
-                    ItemsPerBatch = itemsPerBatch;
-                    LuaCsLogger.LogMessage($"The number of items processed per batch was modified to {ItemsPerBatch}!");
-                }
             }, isCheat: false));
 
             AddedCommands.Add(new DebugConsole.Command("shadowcullingdebuglog", "", (string[] args) =>

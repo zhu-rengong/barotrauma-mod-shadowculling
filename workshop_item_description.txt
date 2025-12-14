@@ -6,44 +6,18 @@ During rendering, items occluded by shadows are ignored, which significantly red
 В процессе рендеринга игнорируются объекты, перекрытые тенями, что значительно снижает нагрузку на процессор и маломощные видеокарты. Затраты производительности ЦП снижаются примерно на 5–15%, что особенно удобно для сцен с множеством предметов, например, в заполненных помещениях.
 
 [hr][/hr]
-[h2]剔除 | Culling | Отсечение[/h2]
-五点采样，剔除中心、轴对齐包围盒四顶点都位于阴影中的物品，同时运用阴影预测手段来减少物体闪烁现象。
-
-Five-point sampling is employed to cull objects whose center and all four vertices of the axis-aligned bounding box are located within shadowed areas, while shadow prediction is applied to reduce object flickering.
-
-Используется пятиточечная выборка для отбраковки объектов, у которых центр и все четыре вершины выровненного по осям ограничивающего параллелепипеда (AABB) находятся в затенённых областях, а также применяется прогнозирование теней для уменьшения мерцания объектов.
-
-[hr][/hr]
 [h2]优化细节 | Optimize details | Оптимизировать детали[/h2]
 [list]
-[*][i]stackalloc[/i]减轻GC压力。
 [*]多核调度，同时支持8个逻辑核心
-[*]引用结构体，避免创建副本。
-[*]视窗内AABB相交测试获取凸包（会投射阴影的对象）。
 [*]凸包预筛选，提前过滤阴影中的凸包，倍数级减少处理量。
-[*]凸包阴影AABB缓存，用于与物品快速相交测试。
-[*]不对视窗外的物品执行阴影剔除。
-[*]有个点子灵光一闪，但我忘了。
 [/list]
 [list]
-[*][i]stackalloc[/i] reduces GC pressure.
 [*]Multi-core scheduling, supporting up to 8 logical cores simultaneously.
-[*]Using ref structs to avoid copies.
-[*]Perform AABB intersection tests within the viewport to obtain convex hulls (objects that cast shadows).
 [*]Pre-filter convex hulls to exclude those in shadows early, reducing the processing load by multiples.
-[*]Caching convex hull shadow AABBs for fast intersection tests with items.
-[*]Shadow culling is not performed on items outside the viewport.
-[*]I had a spark of inspiration, but I forgot it.
 [/list]
 [list]
-[*] [i]stackalloc[/i] снижает нагрузку на сборщик мусора (GC).
 [*] Многопроцессорное планирование с одновременной поддержкой до 8 логических ядер.
-[*] Использование структур по ссылке ([i]ref struct[/i]) для избежания копирования.
-[*] Тест пересечения AABB в пределах окна вида для получения выпуклых оболочек (объектов, отбрасывающих тени).
 [*] Предварительная фильтрация выпуклых оболочек для раннего исключения находящихся в тенях, что в разы снижает объем обработки.
-[*] Кэширование теневых AABB выпуклых оболочек для быстрого теста пересечения с объектами.
-[*] Отсечение по теням не выполняется для объектов вне окна вида.
-[*] Был проблеск идеи, но я о ней забыл.
 [/list]
 
 [hr][/hr]
@@ -71,3 +45,6 @@ Five-point sampling is employed to cull objects whose center and all four vertic
 [url=https://github.com/zhu-rengong/barotrauma-mod-shadowculling]Github[/url]
 
 [img=https://images.steamusercontent.com/ugc/11953855829976146722/4AB6E2DDFBC5C782B1712B097EDCA2A14E74A8D5/?imw=660&imh=1024&ima=fit&impolicy=Letterbox&imcolor=%23000000&letterbox=true][/img]
+
+[hr][/hr]
+[h2]仍在完善中 | WIP Stage | Находится в стадии разработки[/h2]

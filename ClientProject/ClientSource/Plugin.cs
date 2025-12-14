@@ -27,6 +27,8 @@ namespace Whosyouradddy.ShadowCulling
             harmony.PatchAll();
 
             AddCommands();
+
+            InitializeProjSpecific();
         }
 
 
@@ -39,6 +41,8 @@ namespace Whosyouradddy.ShadowCulling
         {
 
         }
+
+        public partial void InitializeProjSpecific();
 
         public void Dispose()
         {
