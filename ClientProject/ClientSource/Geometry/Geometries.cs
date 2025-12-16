@@ -256,12 +256,12 @@ namespace Whosyouradddy.ShadowCulling.Geometry
                     || (Start.Equals(other.End) && End.Equals(other.Start)));
         }
 
-        public static bool operator ==(Segment left, Segment right)
+        public static bool operator ==(in Segment left, in Segment right)
         {
             return left.Equals(right);
         }
 
-        public static bool operator !=(Segment left, Segment right)
+        public static bool operator !=(in Segment left, in Segment right)
         {
             return !(left == right);
         }
@@ -381,12 +381,12 @@ namespace Whosyouradddy.ShadowCulling.Geometry
                    Occluder.Equals(other.Occluder);
         }
 
-        public static bool operator ==(Shadow left, Shadow right)
+        public static bool operator ==(in Shadow left, in Shadow right)
         {
             return left.Equals(right);
         }
 
-        public static bool operator !=(Shadow left, Shadow right)
+        public static bool operator !=(in Shadow left, in Shadow right)
         {
             return !(left == right);
         }

@@ -349,11 +349,14 @@ namespace Whosyouradddy.ShadowCulling
                         var nextClipNode = clipNode.Next;
                         ref readonly Segment occluder = ref clipNode.ValueRef;
                         int clipsLength = occluder.ClipFrom(otherShadow, out Segment[] clippedOccluders);
-                        for (int clipIndex = 0; clipIndex < clipsLength; clipIndex++)
+                        if (clipsLength != 1 || occluder != clippedOccluders[0])
                         {
-                            shadowClippingOccluders.AddBefore(clipNode, clippedOccluders[clipIndex]);
+                            for (int clipIndex = 0; clipIndex < clipsLength; clipIndex++)
+                            {
+                                shadowClippingOccluders.AddBefore(clipNode, clippedOccluders[clipIndex]);
+                            }
+                            shadowClippingOccluders.Remove(clipNode);
                         }
-                        shadowClippingOccluders.Remove(clipNode);
                         clipNode = nextClipNode;
                     } while (clipNode != null);
                 }
@@ -535,11 +538,14 @@ namespace Whosyouradddy.ShadowCulling
                                 var nextClipNode = clipNode.Next;
                                 ref readonly Segment edge = ref clipNode.ValueRef;
                                 int clipsLength = edge.ClipFrom(shadow, out Segment[] clippedEdges);
-                                for (int clipIndex = 0; clipIndex < clipsLength; clipIndex++)
+                                if (clipsLength != 1 || edge != clippedEdges[0])
                                 {
-                                    shadowClippingEdges.AddBefore(clipNode, clippedEdges[clipIndex]);
+                                    for (int clipIndex = 0; clipIndex < clipsLength; clipIndex++)
+                                    {
+                                        shadowClippingEdges.AddBefore(clipNode, clippedEdges[clipIndex]);
+                                    }
+                                    shadowClippingEdges.Remove(clipNode);
                                 }
-                                shadowClippingEdges.Remove(clipNode);
                                 clipNode = nextClipNode;
                             } while (clipNode != null);
                         }
