@@ -28,36 +28,6 @@ namespace Whosyouradddy.ShadowCulling
 {
     public partial class Plugin : IAssemblyPlugin
     {
-        [HarmonyPatch(
-             declaringType: typeof(Submarine),
-             methodName: nameof(Submarine.CullEntities)
-        )]
-        class Submarine_CullEntities
-        {
-            static void Postfix()
-            {
-                if (CullingEnabled)
-                {
-                    PerformEntityCulling();
-                }
-            }
-        }
-
-        private const int ITEMS_PER_CULLING_BATCH = 65;
-        private const double CULLING_UPDATE_INTERVAL_SECONDS = 0.05;
-        private const float SHADOW_PREDICTION_TOLERANCE_MULTIPLIER = 5000.0f;
-        private static double lastCullingUpdateTime;
-        private static double lastPerformanceLogTime;
-        private static bool cullingStateDirty = false;
-
-        private static Shadow[] validShadowBuffer = new Shadow[1024];
-        private static LinkedList<int> shadowIndexLinkedList = new();
-        private static List<int> sortedShadowIndices = new(1024);
-        private static LinkedList<Segment> shadowClippingOccluders = new();
-        private static List<Item> itemsForCulling = new(8192);
-        private static Vector2 previousViewTargetPosition;
-        private static ObjectPool<LinkedList<Segment>> poolLinkedListSegment = new(() => new());
-
         [Flags]
         public enum Quadrant
         {
@@ -73,10 +43,77 @@ namespace Whosyouradddy.ShadowCulling
             All = RightTop | LeftTop | LeftBottom | RightBottom,
         }
 
-        private static Dictionary<int, Quadrant> shadowIndexQuadrant = new(1024);
-        private static Dictionary<Quadrant, RayRange> quadrants = new(4);
+        [HarmonyPatch(
+             declaringType: typeof(Submarine),
+             methodName: nameof(Submarine.CullEntities)
+        )]
+        class Submarine_CullEntities
+        {
+            static void Postfix()
+            {
+                if (CullingEnabled)
+                {
+                    PerformEntityCulling();
+                }
+            }
+        }
 
-        private static ParallelOptions cullingParallelOptions = new() { MaxDegreeOfParallelism = 6 };
+        [HarmonyPatch(
+             declaringType: typeof(Item),
+             methodName: nameof(Item.Draw),
+             argumentTypes: new Type[] { typeof(SpriteBatch), typeof(bool), typeof(bool) }
+        )]
+        class Item_Draw
+        {
+            static bool Prefix(Item __instance)
+            {
+                if (isEntityCulled.TryGetValue(__instance, out bool _))
+                {
+                    return false;
+                }
+
+                return true;
+            }
+        }
+
+        [HarmonyPatch(
+             declaringType: typeof(Structure),
+             methodName: nameof(Structure.Draw),
+             argumentTypes: new Type[] { typeof(SpriteBatch), typeof(bool), typeof(bool) }
+        )]
+        class Structure_Draw
+        {
+            static bool Prefix(Item __instance)
+            {
+                if (isEntityCulled.TryGetValue(__instance, out bool _))
+                {
+                    return false;
+                }
+
+                return true;
+            }
+        }
+
+        private const int ENTITIES_PER_CULLING_BATCH = 65;
+        private const double CULLING_UPDATE_INTERVAL_SECONDS = 0.05;
+        private const float SHADOW_PREDICTION_TOLERANCE_MULTIPLIER = 5000.0f;
+        private static double lastCullingUpdateTime;
+        private static double lastPerformanceLogTime;
+        private static bool cullingStateDirty = false;
+
+        private static Shadow[] validShadowBuffer = new Shadow[1024];
+        private static LinkedList<int> shadowIndexLinkedList = new();
+        private static Dictionary<Quadrant, RayRange> quadrants = new(4);
+        private static Dictionary<int, Quadrant> shadowIndexQuadrant = new(1024);
+        private static List<int> sortedShadowIndices = new(1024);
+        private static LinkedList<Segment> shadowClippingOccluders = new();
+        private static List<MapEntity> entitiesForCulling = new(8192);
+        private const int CONCURRENCY_LEVEL = 6;
+        private static ConcurrentDictionary<MapEntity, bool> isEntityCulled = new(CONCURRENCY_LEVEL, 8192);
+        private static Vector2 previousViewTargetPosition;
+        private static ObjectPool<LinkedList<Segment>> poolLinkedListSegment = new(() => new());
+
+        private static ParallelOptions cullingParallelOptions = new() { MaxDegreeOfParallelism = CONCURRENCY_LEVEL };
         private static Stopwatch cullingPerformanceTimer = new();
 
         public partial void InitializeProjSpecific()
@@ -96,10 +133,7 @@ namespace Whosyouradddy.ShadowCulling
             {
                 if (cullingStateDirty)
                 {
-                    Item.ItemList.ForEach(item =>
-                    {
-                        item.Visible = true;
-                    });
+                    isEntityCulled.Clear();
                     cullingStateDirty = false;
                     previousViewTargetPosition = Vector2.Zero;
                 }
@@ -120,6 +154,7 @@ namespace Whosyouradddy.ShadowCulling
 
             shadowIndexLinkedList.Clear();
             shadowIndexQuadrant.Clear();
+            isEntityCulled.Clear();
 
             Rectangle cameraViewBounds = camera.WorldView;
 
@@ -316,62 +351,81 @@ namespace Whosyouradddy.ShadowCulling
                 }
             }
 
-            itemsForCulling.Clear();
-            foreach (var visibleEntity in Submarine.VisibleEntities)
-            {
-                if (visibleEntity is not Item item
-                    || item.IsHidden
-                    || !item.cachedVisibleExtents.HasValue
-                    || item.IsLadder
-                    || item.isWire)
-                {
-                    continue;
-                }
-
-                itemsForCulling.Add(item);
-            }
+            entitiesForCulling.Clear();
+            entitiesForCulling.AddRange(Submarine.VisibleEntities);
 
             int totalCulled = 0;
             Parallel.For(
                 fromInclusive: 0,
-                toExclusive: (itemsForCulling.Count + ITEMS_PER_CULLING_BATCH - 1) / ITEMS_PER_CULLING_BATCH,
+                toExclusive: (entitiesForCulling.Count + ENTITIES_PER_CULLING_BATCH - 1) / ENTITIES_PER_CULLING_BATCH,
                 parallelOptions: cullingParallelOptions,
                 body: ProcessCullingBatch
             );
 
             void ProcessCullingBatch(int batchIndex)
             {
-                int batchStartIndex = batchIndex * ITEMS_PER_CULLING_BATCH;
-                int batchEndIndex = Math.Min(batchStartIndex + ITEMS_PER_CULLING_BATCH, itemsForCulling.Count);
-                Span<Segment> itemEdges = stackalloc Segment[8];
+                int batchStartIndex = batchIndex * ENTITIES_PER_CULLING_BATCH;
+                int batchEndIndex = Math.Min(batchStartIndex + ENTITIES_PER_CULLING_BATCH, entitiesForCulling.Count);
+                Span<Segment> entityEdges = stackalloc Segment[8];
                 Span<Segment> edgeClipBuffer = stackalloc Segment[3];
                 int entitiesCulled = 0;
                 LinkedList<Segment> shadowClippingEdges = poolLinkedListSegment.Get();
 
-                for (int itemIndex = batchStartIndex; itemIndex < batchEndIndex; itemIndex++)
+                for (int entityIndex = batchStartIndex; entityIndex < batchEndIndex; entityIndex++)
                 {
-                    Item item = itemsForCulling[itemIndex];
-                    Rectangle itemAABB = item.cachedVisibleExtents!.Value;
-                    itemAABB.Offset(item.DrawPosition.X, item.DrawPosition.Y);
+                    MapEntity entity = entitiesForCulling[entityIndex];
+                    // The origin is at the top left
+                    RectangleF entityAABB;
 
-                    // In Vanilla, the AABB bounds calculation is messed up:
-                    // ClientSource/Items/Item.cs | cachedVisibleExtents = extents = new Rectangle(min.ToPoint(), max.ToPoint());
-                    // The correct one should be:
-                    // cachedVisibleExtents = extents = new Rectangle(min.ToPoint(), (max - min).ToPoint());
-                    // I have to calculate the sample points based on original cached extents in real-time here:
-                    itemAABB.Width *= 2;
-                    itemAABB.Height *= 2;
-                    itemAABB.Y += itemAABB.Height;
+                    if (entity is Item item)
+                    {
+                        if (item.IsHidden
+                            || !item.cachedVisibleExtents.HasValue
+                            || item.IsLadder
+                            || item.isWire)
+                        {
+                            continue;
+                        }
 
-                    Vector2 leftTop = new(itemAABB.X, itemAABB.Y);
-                    Vector2 rightTop = new(itemAABB.X + itemAABB.Width, itemAABB.Y);
-                    Vector2 leftBottom = new(itemAABB.X, itemAABB.Y - itemAABB.Height);
+                        entityAABB = item.cachedVisibleExtents.Value;
+                        entityAABB.Offset(item.DrawPosition.X, item.DrawPosition.Y);
+
+                        // In Vanilla, the AABB bounds calculation is messed up:
+                        // ClientSource/Items/Item.cs | cachedVisibleExtents = extents = new Rectangle(min.ToPoint(), max.ToPoint());
+                        // The correct one should be:
+                        // cachedVisibleExtents = extents = new Rectangle(min.ToPoint(), (max - min).ToPoint());
+                        // I have to calculate the sample points based on original cached extents in real-time here:
+                        entityAABB.Width *= 2;
+                        entityAABB.Height *= 2;
+                        entityAABB.Y += entityAABB.Height;
+                    }
+                    else if (entity is Structure structure)
+                    {
+                        if (structure.IsHidden || structure.Prefab.DecorativeSprites.Length > 0)
+                        {
+                            continue;
+                        }
+
+                        entityAABB = Quad2D.FromSubmarineRectangle(structure.WorldRect).Rotated(
+                            structure.FlippedX != structure.FlippedY
+                                ? structure.RotationRad
+                                : -structure.RotationRad).BoundingAxisAlignedRectangle;
+                        entityAABB.Y += entityAABB.Height;
+                    }
+                    else
+                    {
+                        continue;
+                    }
+
+                    Vector2 leftTop = new(entityAABB.X, entityAABB.Y);
+                    Vector2 rightTop = new(entityAABB.X + entityAABB.Width, entityAABB.Y);
+                    Vector2 leftBottom = new(entityAABB.X, entityAABB.Y - entityAABB.Height);
                     Vector2 rightBottom = new(rightTop.X, leftBottom.Y);
 
-                    itemEdges[4] = new(leftTop, rightTop);
-                    itemEdges[5] = new(rightTop, rightBottom);
-                    itemEdges[6] = new(rightBottom, leftBottom);
-                    itemEdges[7] = new(leftBottom, leftTop);
+                    entityEdges[4] = new(leftTop, rightTop);
+                    entityEdges[5] = new(rightTop, rightBottom);
+                    entityEdges[6] = new(rightBottom, leftBottom);
+                    entityEdges[7] = new(leftBottom, leftTop);
 
                     Quadrant entityQuadrant = Quadrant.None;
                     int numCoveredQuadrants = 0;
@@ -379,12 +433,12 @@ namespace Whosyouradddy.ShadowCulling
                     {
                         for (int edgeIndex = 4; edgeIndex < 8; edgeIndex++)
                         {
-                            ref readonly Segment edge = ref itemEdges[edgeIndex];
+                            ref readonly Segment edge = ref entityEdges[edgeIndex];
                             if (edge.IntersectWith(rayRange))
                             {
                                 if (++numCoveredQuadrants > 2)
                                 {
-                                    goto ENTITY_REFUSE_CULLING;
+                                    goto ENTITY_CULLING_COMPLETE;
                                 }
                                 entityQuadrant |= quadrant;
                                 break;
@@ -396,32 +450,32 @@ namespace Whosyouradddy.ShadowCulling
                     switch (entityQuadrant)
                     {
                         case Quadrant.RightTop:
-                            itemEdges[edgeCount++] = itemEdges[7];
-                            itemEdges[edgeCount++] = itemEdges[6];
+                            entityEdges[edgeCount++] = entityEdges[7];
+                            entityEdges[edgeCount++] = entityEdges[6];
                             break;
                         case Quadrant.LeftTop:
-                            itemEdges[edgeCount++] = itemEdges[5];
-                            itemEdges[edgeCount++] = itemEdges[6];
+                            entityEdges[edgeCount++] = entityEdges[5];
+                            entityEdges[edgeCount++] = entityEdges[6];
                             break;
                         case Quadrant.LeftBottom:
-                            itemEdges[edgeCount++] = itemEdges[4];
-                            itemEdges[edgeCount++] = itemEdges[5];
+                            entityEdges[edgeCount++] = entityEdges[4];
+                            entityEdges[edgeCount++] = entityEdges[5];
                             break;
                         case Quadrant.RightBottom:
-                            itemEdges[edgeCount++] = itemEdges[7];
-                            itemEdges[edgeCount++] = itemEdges[4];
+                            entityEdges[edgeCount++] = entityEdges[7];
+                            entityEdges[edgeCount++] = entityEdges[4];
                             break;
                         case Quadrant.Top:
-                            itemEdges[edgeCount++] = itemEdges[6];
+                            entityEdges[edgeCount++] = entityEdges[6];
                             break;
                         case Quadrant.Left:
-                            itemEdges[edgeCount++] = itemEdges[5];
+                            entityEdges[edgeCount++] = entityEdges[5];
                             break;
                         case Quadrant.Bottom:
-                            itemEdges[edgeCount++] = itemEdges[4];
+                            entityEdges[edgeCount++] = entityEdges[4];
                             break;
                         case Quadrant.Right:
-                            itemEdges[edgeCount++] = itemEdges[7];
+                            entityEdges[edgeCount++] = entityEdges[7];
                             break;
                         default:
                             break;
@@ -429,7 +483,7 @@ namespace Whosyouradddy.ShadowCulling
 
                     for (int edgeIndex = 0; edgeIndex < edgeCount; edgeIndex++)
                     {
-                        shadowClippingEdges.AddLast(itemEdges[edgeIndex]);
+                        shadowClippingEdges.AddLast(entityEdges[edgeIndex]);
 
                         foreach (int shadowIndex in sortedShadowIndices)
                         {
@@ -458,17 +512,12 @@ namespace Whosyouradddy.ShadowCulling
                         shadowClippingEdges.Clear();
                         if (refuseCulling)
                         {
-                            goto ENTITY_REFUSE_CULLING;
+                            goto ENTITY_CULLING_COMPLETE;
                         }
                     }
 
-                    item.Visible = false;
+                    isEntityCulled.TryAdd(entity, true);
                     entitiesCulled++;
-                    goto ENTITY_CULLING_COMPLETE;
-
-                ENTITY_REFUSE_CULLING:
-                    item.Visible = true;
-
                 ENTITY_CULLING_COMPLETE:;
                 }
 
@@ -490,7 +539,6 @@ namespace Whosyouradddy.ShadowCulling
             lastCullingUpdateTime = Timing.TotalTime;
 
             cullingStateDirty = true;
-
         }
 
         public static float PredictAngleChange(

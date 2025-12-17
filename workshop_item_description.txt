@@ -1,9 +1,9 @@
 [h2]介绍 | Introduction | Введение[/h2]
-渲染过程中会忽略被阴影遮挡的物品，显著减轻CPU和低配GPU负载，CPU性能开销约降低5%~15%，特别适合物品繁多的密室场景。
+渲染过程中会忽略被阴影遮挡的实体（物品、结构体），显著减轻CPU和低配GPU负载，CPU性能开销约降低6%~35%，特别适合物品繁多的密室场景。
 
-During rendering, items occluded by shadows are ignored, which significantly reduces the CPU and low‑end GPU workload. CPU performance overhead is lowered by approximately 5%–15%, making this especially suitable for cluttered room scenes with many objects.
+During rendering, entities (items, structures) occluded by shadows are ignored, significantly reducing the workload on the CPU and low‑end GPUs. CPU performance overhead is lowered by approximately 6%–35%, making it especially suitable for dense scenes with numerous objects, such as cluttered rooms.
 
-В процессе рендеринга игнорируются объекты, перекрытые тенями, что значительно снижает нагрузку на процессор и маломощные видеокарты. Затраты производительности ЦП снижаются примерно на 5–15%, что особенно удобно для сцен с множеством предметов, например, в заполненных помещениях.
+В процессе рендеринга игнорируются объекты (предметы, структуры), перекрытые тенями, что значительно снижает нагрузку на центральный процессор и слабые графические процессоры. Затраты производительности ЦП сокращаются примерно на 6–35%, что особенно полезно для насыщенных сцен с большим количеством объектов, например, захламлённых помещений.
 
 [hr][/hr]
 [h2]优化细节 | Optimize details | Оптимизировать детали[/h2]
@@ -25,19 +25,19 @@ During rendering, items occluded by shadows are ignored, which significantly red
 [list]
 [*][i]shadowcullingtoggle[/i] [b]功能[/b] 开关阴影剔除
 [*][i]shadowcullingdebugonce[/i] [b]调试[/b] 执行一次阴影剔除
-[*][i]shadowcullingdebugdraw[/i] [b]调试[/b] 绘制阴影区和物品AABB
+[*][i]shadowcullingdebugdraw[/i] [b]调试[/b] 绘制阴影区和物品、结构体的AABB
 [*][i]shadowcullingdebuglog[/i] [b]调试[/b] 显示日志
 [/list]
 [list]
 [*][i]shadowcullingtoggle[/i] [b]Function[/b] Toggle shadow culling
 [*][i]shadowcullingdebugonce[/i] [b]Debug[/b] Perform shadow culling once
-[*][i]shadowcullingdebugdraw[/i] [b]Debug[/b] Draw shadow regions and item AABBs
+[*][i]shadowcullingdebugdraw[/i] [b]Debug[/b] Draw shadow regions and AABBs of items and structures
 [*][i]shadowcullingdebuglog[/i] [b]Debug[/b] Show logs
 [/list]
 [list]
 [*] [i]shadowcullingtoggle[/i] [b]Функция[/b] Включение/отключение отсечения по теням
 [*] [i]shadowcullingdebugonce[/i] [b]Отладка[/b] Выполнить отсечение по теням один раз
-[*] [i]shadowcullingdebugdraw[/i] [b]Отладка[/b] Отобразить области теней и AABB объектов
+[*] [i]shadowcullingdebugdraw[/i] [b]Отладка[/b] Отобразить области теней и AABB объектов (предметов) и конструкций.
 [*] [i]shadowcullingdebuglog[/i] [b]Отладка[/b] Показать логи
 [/list]
 

@@ -20,6 +20,9 @@ namespace Whosyouradddy.ShadowCulling
         public static bool CullingEnabled = true;
 
         public static bool DebugDraw = false;
+        public static float DebugDrawShadowLength = 300.0f;
+        public static bool DebugDrawItem = true;
+        public static bool DebugDrawStructure = true;
 
         public static bool DebugLog = false;
 
@@ -35,16 +38,31 @@ namespace Whosyouradddy.ShadowCulling
                 CullingEnabled = !CullingEnabled;
                 if (!CullingEnabled)
                 {
-                    Item.ItemList.ForEach(item =>
-                    {
-                        item.Visible = true;
-                    });
+                    isEntityCulled.Clear();
                 }
             }, isCheat: false));
 
             AddedCommands.Add(new DebugConsole.Command("shadowcullingdebugdraw", "", (string[] args) =>
             {
                 DebugDraw = !DebugDraw;
+            }, isCheat: false));
+
+            AddedCommands.Add(new DebugConsole.Command("shadowcullingdebugdrawshadowlength", "", (string[] args) =>
+            {
+                if (args.Length > 0 && float.TryParse(args[0], out float length))
+                {
+                    DebugDrawShadowLength = Math.Clamp(length, 100.0f, 10000.0f);
+                }
+            }, isCheat: false));
+
+            AddedCommands.Add(new DebugConsole.Command("shadowcullingdebugdrawitem", "", (string[] args) =>
+            {
+                DebugDrawItem = !DebugDrawItem;
+            }, isCheat: false));
+
+            AddedCommands.Add(new DebugConsole.Command("shadowcullingdebugdrawstructure", "", (string[] args) =>
+            {
+                DebugDrawStructure = !DebugDrawStructure;
             }, isCheat: false));
 
             AddedCommands.Add(new DebugConsole.Command("shadowcullingdebuglog", "", (string[] args) =>
