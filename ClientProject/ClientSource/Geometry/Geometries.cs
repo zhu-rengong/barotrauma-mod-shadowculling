@@ -78,17 +78,16 @@ namespace Whosyouradddy.ShadowCulling.Geometry
             return true;
         }
 
-        public int ClipFrom(in Shadow shadow, out Segment[] clips)
+        public int ClipFrom(in Shadow shadow, Span<Segment> clips)
         {
             float dir = shadow.RayScanDir;
             if (Math.Abs(dir) < 1e-4f)
             {
-                clips = new Segment[] { this };
+                clips[0] = this;
                 return 1;
             }
 
-            Span<Segment> span = stackalloc Segment[3];
-            int length = 0;
+            int count = 0;
             Vector2 intersection = default;
             ref readonly Segment occluder = ref shadow.Occluder;
             ref readonly Vector2 occluderStartToEnd = ref occluder.StartToEnd;
@@ -100,8 +99,11 @@ namespace Whosyouradddy.ShadowCulling.Geometry
                 float cross = StartToEnd.CrossProduct(occluderStartToEnd);
                 if (Math.Abs(cross) >= 1e-4f)
                 {
-                    span[length] = new Segment(intersection, cross * dir > 0.0f ? Start : End);
-                    if (span[length].StartToEnd != Vector2.Zero) { length++; }
+                    Segment newClip = new(intersection, cross * dir > 0.0f ? Start : End);
+                    if (newClip.StartToEnd != Vector2.Zero)
+                    {
+                        clips[count++] = newClip;
+                    }
                 }
             }
 
@@ -110,8 +112,11 @@ namespace Whosyouradddy.ShadowCulling.Geometry
                 float cross = StartToEnd.CrossProduct(ray1.Direction);
                 if (Math.Abs(cross) >= 1e-4f)
                 {
-                    span[length] = new Segment(intersection, cross * dir < 0.0f ? Start : End);
-                    if (span[length].StartToEnd != Vector2.Zero) { length++; }
+                    Segment newClip = new Segment(intersection, cross * dir < 0.0f ? Start : End);
+                    if (newClip.StartToEnd != Vector2.Zero)
+                    {
+                        clips[count++] = newClip;
+                    }
                 }
             }
 
@@ -120,24 +125,34 @@ namespace Whosyouradddy.ShadowCulling.Geometry
                 float cross = StartToEnd.CrossProduct(ray2.Direction);
                 if (Math.Abs(cross) >= 1e-4f)
                 {
-                    span[length] = new Segment(intersection, cross * dir > 0.0f ? Start : End);
-                    if (span[length].StartToEnd != Vector2.Zero) { length++; }
+                    Segment newClip = new(intersection, cross * dir > 0.0f ? Start : End);
+                    if (newClip.StartToEnd != Vector2.Zero)
+                    {
+                        clips[count++] = newClip;
+                    }
                 }
             }
 
-            if (length == 0)
+            if (count == 0)
             {
                 Vector2 occluderToSegment = Start - occluder.Start;
                 if (occluderToSegment.CrossProduct(occluderStartToEnd) * dir < 0.0f
                     || occluderToSegment.CrossProduct(ray1.Direction) * dir > 0.0f
                     || (Start - occluder.End).CrossProduct(ray2.Direction) * dir < 0.0f)
                 {
-                    span[length++] = this;
+                    clips[count++] = this;
                 }
             }
 
-            clips = span.Slice(0, length).ToArray();
-            return length;
+            return count;
+        }
+
+        public int ClipFrom(in Shadow shadow, out Segment[] clips)
+        {
+            Span<Segment> span = stackalloc Segment[3];
+            int count = ClipFrom(shadow, span);
+            clips = span.Slice(0, count).ToArray();
+            return count;
         }
 
         public int ClipFrom(IEnumerable<Shadow> shadows, out LinkedList<Segment> clips)
@@ -167,17 +182,16 @@ namespace Whosyouradddy.ShadowCulling.Geometry
             return clips.Count;
         }
 
-        public int ClipFrom(in RayRange rayRange, out Segment[] clips)
+        public int ClipFrom(in RayRange rayRange, Span<Segment> clips)
         {
             float dir = rayRange.RayScanDir;
             if (Math.Abs(dir) < 1e-4f)
             {
-                clips = new Segment[] { this };
+                clips[0] = this;
                 return 1;
             }
 
-            Span<Segment> span = stackalloc Segment[2];
-            int length = 0;
+            int count = 0;
             Vector2 intersection = default;
             ref readonly Ray start = ref rayRange.Start;
             ref readonly Ray end = ref rayRange.End;
@@ -187,8 +201,11 @@ namespace Whosyouradddy.ShadowCulling.Geometry
                 float cross = StartToEnd.CrossProduct(start.Direction);
                 if (Math.Abs(cross) >= 1e-4f)
                 {
-                    span[length] = new Segment(intersection, cross * dir < 0.0f ? Start : End);
-                    if (span[length].StartToEnd != Vector2.Zero) { length++; }
+                    Segment newClip = new(intersection, cross * dir < 0.0f ? Start : End);
+                    if (newClip.StartToEnd != Vector2.Zero)
+                    {
+                        clips[count++] = newClip;
+                    }
                 }
             }
 
@@ -197,23 +214,33 @@ namespace Whosyouradddy.ShadowCulling.Geometry
                 float cross = StartToEnd.CrossProduct(end.Direction);
                 if (Math.Abs(cross) >= 1e-4f)
                 {
-                    span[length] = new Segment(intersection, cross * dir > 0.0f ? Start : End);
-                    if (span[length].StartToEnd != Vector2.Zero) { length++; }
+                    Segment newClip = new(intersection, cross * dir > 0.0f ? Start : End);
+                    if (newClip.StartToEnd != Vector2.Zero)
+                    {
+                        clips[count++] = newClip;
+                    }
                 }
             }
 
-            if (length == 0)
+            if (count == 0)
             {
                 Vector2 originToSegment = Start - rayRange.Origin;
                 if (originToSegment.CrossProduct(start.Direction) * dir > 0
                     || originToSegment.CrossProduct(end.Direction) * dir < 0)
                 {
-                    span[length++] = this;
+                    clips[count++] = this;
                 }
             }
 
-            clips = span.Slice(0, length).ToArray();
-            return length;
+            return count;
+        }
+
+        public int ClipFrom(in RayRange rayRange, out Segment[] clips)
+        {
+            Span<Segment> tempSpan = stackalloc Segment[2];
+            int count = ClipFrom(rayRange, tempSpan);
+            clips = tempSpan.Slice(0, count).ToArray();
+            return count;
         }
 
         public bool IntersectWith(in RayRange rayRange)

@@ -19,7 +19,7 @@ namespace Whosyouradddy.ShadowCulling
 
         public static bool CullingEnabled = true;
 
-        public static bool DebugDrawAABB = false;
+        public static bool DebugDraw = false;
 
         public static bool DebugLog = false;
 
@@ -42,14 +42,19 @@ namespace Whosyouradddy.ShadowCulling
                 }
             }, isCheat: false));
 
-            AddedCommands.Add(new DebugConsole.Command("shadowcullingdebugdrawaabb", "", (string[] args) =>
+            AddedCommands.Add(new DebugConsole.Command("shadowcullingdebugdraw", "", (string[] args) =>
             {
-                DebugDrawAABB = !DebugDrawAABB;
+                DebugDraw = !DebugDraw;
             }, isCheat: false));
 
             AddedCommands.Add(new DebugConsole.Command("shadowcullingdebuglog", "", (string[] args) =>
             {
                 DebugLog = !DebugLog;
+            }, isCheat: false));
+
+            AddedCommands.Add(new DebugConsole.Command("shadowcullingpoolstat", "", (string[] args) =>
+            {
+                LuaCsLogger.LogMessage($"[PooledLinkedList] Segment: {poolLinkedListSegment.Count}");
             }, isCheat: false));
 
             DebugConsole.Commands.AddRange(AddedCommands);

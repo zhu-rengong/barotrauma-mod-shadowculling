@@ -43,106 +43,7 @@ namespace Whosyouradddy.ShadowCulling
             }
         }
 
-        [HarmonyPatch(
-            declaringType: typeof(GUI),
-            methodName: nameof(GUI.Draw)
-        )]
-        class GUI_Draw
-        {
-            static void Postfix()
-            {
-                if (DebugDrawAABB)
-                {
-                    if (GameMain.spriteBatch is SpriteBatch spriteBatch
-                        && !SubEditorScreen.IsSubEditor()
-                        && Character.Controlled is Character character
-                        && Screen.Selected?.Cam is Camera cam
-                        && (GameMain.IsSingleplayer
-                            ? GameMain.GameSession != null && GameMain.GameSession.IsRunning
-                            : GameMain.Client?.GameStarted == true))
-                    {
-                        foreach (int shadowIndex in sortedShadowIndices)
-                        {
-                            ref readonly Shadow shadow = ref validShadowBuffer[shadowIndex];
-                            GUI.DrawLine(
-                                spriteBatch,
-                                cam.WorldToScreen(shadow.Occluder.Start),
-                                cam.WorldToScreen(shadow.Occluder.End),
-                                Color.BlueViolet,
-                                width: 3
-                            );
-                            GUI.DrawLine(
-                                spriteBatch,
-                                cam.WorldToScreen(shadow.Ray1.Origin),
-                                cam.WorldToScreen(shadow.Ray1.Origin + shadow.Ray1.Direction * 300.0f),
-                                Color.BlueViolet,
-                                width: 1
-                            );
-                            GUI.DrawLine(
-                                spriteBatch,
-                                cam.WorldToScreen(shadow.Ray2.Origin),
-                                cam.WorldToScreen(shadow.Ray2.Origin + shadow.Ray2.Direction * 300.0f),
-                                Color.BlueViolet,
-                                width: 1
-                            );
-                        }
-
-                        foreach (var mapEntity in Submarine.VisibleEntities)
-                        {
-                            if (mapEntity is not Item item
-                                || item.IsHidden
-                                || item.GetComponent<Wire>() is { Drawable: true }
-                                || item.GetComponent<Ladder>() is not null)
-                            {
-                                continue;
-                            }
-
-                            // Draw a simple AABB of the item
-                            RectangleF boundingBox = item.GetTransformedQuad().BoundingAxisAlignedRectangle;
-                            Vector2 min = new Vector2(-boundingBox.Width / 2, -boundingBox.Height / 2);
-                            Vector2 max = -min;
-                            Rectangle extents = new(min.ToPoint(), (max - min).ToPoint());
-                            extents.Offset(item.DrawPosition);
-                            GUI.DrawRectangle(
-                                GameMain.spriteBatch,
-                                new Vector2[]
-                                {
-                                    cam.WorldToScreen(new Vector2(extents.Left, extents.Top)),
-                                    cam.WorldToScreen(new Vector2(extents.Right, extents.Top)),
-                                    cam.WorldToScreen(new Vector2(extents.Right, extents.Bottom)),
-                                    cam.WorldToScreen(new Vector2(extents.Left, extents.Bottom)),
-                                },
-                                item.Visible ? Color.LightBlue : new(Color.LightBlue, 0.5f),
-                                depth: 0.04f,
-                                thickness: 2.0f
-                            );
-
-                            // Draw AABB of cached extents
-                            if (item.cachedVisibleExtents is Rectangle itemCachedExtents)
-                            {
-                                itemCachedExtents.Offset(item.DrawPosition);
-
-                                GUI.DrawRectangle(
-                                    GameMain.spriteBatch,
-                                    new Vector2[]
-                                    {
-                                        cam.WorldToScreen(new Vector2(itemCachedExtents.X, itemCachedExtents.Y)),
-                                        cam.WorldToScreen(new Vector2(itemCachedExtents.X + itemCachedExtents.Width * 2, itemCachedExtents.Y)),
-                                        cam.WorldToScreen(new Vector2(itemCachedExtents.X + itemCachedExtents.Width * 2, itemCachedExtents.Y + itemCachedExtents.Height * 2)),
-                                        cam.WorldToScreen(new Vector2(itemCachedExtents.X, itemCachedExtents.Y + itemCachedExtents.Height * 2)),
-                                    },
-                                    item.Visible ? Color.LightYellow : new(Color.LightYellow, 0.2f),
-                                    depth: 0.05f,
-                                    thickness: 3.0f
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        private const int ITEMS_PER_CULLING_BATCH = 75;
+        private const int ITEMS_PER_CULLING_BATCH = 65;
         private const double CULLING_UPDATE_INTERVAL_SECONDS = 0.05;
         private const float SHADOW_PREDICTION_TOLERANCE_MULTIPLIER = 5000.0f;
         private static double lastCullingUpdateTime;
@@ -155,6 +56,7 @@ namespace Whosyouradddy.ShadowCulling
         private static LinkedList<Segment> shadowClippingOccluders = new();
         private static List<Item> itemsForCulling = new(8192);
         private static Vector2 previousViewTargetPosition;
+        private static ObjectPool<LinkedList<Segment>> poolLinkedListSegment = new(() => new());
 
         [Flags]
         public enum Quadrant
@@ -174,7 +76,7 @@ namespace Whosyouradddy.ShadowCulling
         private static Dictionary<int, Quadrant> shadowIndexQuadrant = new(1024);
         private static Dictionary<Quadrant, RayRange> quadrants = new(4);
 
-        private static ParallelOptions cullingParallelOptions = new() { MaxDegreeOfParallelism = 8 };
+        private static ParallelOptions cullingParallelOptions = new() { MaxDegreeOfParallelism = 6 };
         private static Stopwatch cullingPerformanceTimer = new();
 
         public partial void InitializeProjSpecific()
@@ -214,6 +116,7 @@ namespace Whosyouradddy.ShadowCulling
             cullingPerformanceTimer.Restart();
 
             int validShadowNumber = 0;
+            Span<Segment> occluderClipBuffer = stackalloc Segment[3];
 
             shadowIndexLinkedList.Clear();
             shadowIndexQuadrant.Clear();
@@ -334,7 +237,6 @@ namespace Whosyouradddy.ShadowCulling
                 ref readonly Shadow currentShadow = ref validShadowBuffer[currentShadowIndex];
                 ref readonly Segment entireOccluder = ref currentShadow.Occluder;
                 Quadrant quadrant = shadowIndexQuadrant[currentShadowIndex];
-                shadowClippingOccluders.Clear();
                 shadowClippingOccluders.AddLast(entireOccluder);
 
                 shadowIndexLinkedList.Remove(currentShadowNode);
@@ -348,12 +250,12 @@ namespace Whosyouradddy.ShadowCulling
                     {
                         var nextClipNode = clipNode.Next;
                         ref readonly Segment occluder = ref clipNode.ValueRef;
-                        int clipsLength = occluder.ClipFrom(otherShadow, out Segment[] clippedOccluders);
-                        if (clipsLength != 1 || occluder != clippedOccluders[0])
+                        int clipCount = occluder.ClipFrom(otherShadow, occluderClipBuffer);
+                        if (clipCount != 1 || occluder != occluderClipBuffer[0])
                         {
-                            for (int clipIndex = 0; clipIndex < clipsLength; clipIndex++)
+                            for (int clipIndex = 0; clipIndex < clipCount; clipIndex++)
                             {
-                                shadowClippingOccluders.AddBefore(clipNode, clippedOccluders[clipIndex]);
+                                shadowClippingOccluders.AddBefore(clipNode, occluderClipBuffer[clipIndex]);
                             }
                             shadowClippingOccluders.Remove(clipNode);
                         }
@@ -376,6 +278,8 @@ namespace Whosyouradddy.ShadowCulling
                         shadowIndexLinkedList.AddLast(currentShadowNode);
                     }
                 }
+
+                shadowClippingOccluders.Clear();
 
                 currentShadowNode = previousShadowNode;
             }
@@ -440,8 +344,9 @@ namespace Whosyouradddy.ShadowCulling
                 int batchStartIndex = batchIndex * ITEMS_PER_CULLING_BATCH;
                 int batchEndIndex = Math.Min(batchStartIndex + ITEMS_PER_CULLING_BATCH, itemsForCulling.Count);
                 Span<Segment> itemEdges = stackalloc Segment[8];
+                Span<Segment> edgeClipBuffer = stackalloc Segment[3];
                 int entitiesCulled = 0;
-                LinkedList<Segment> shadowClippingEdges = new();
+                LinkedList<Segment> shadowClippingEdges = poolLinkedListSegment.Get();
 
                 for (int itemIndex = batchStartIndex; itemIndex < batchEndIndex; itemIndex++)
                 {
@@ -524,7 +429,6 @@ namespace Whosyouradddy.ShadowCulling
 
                     for (int edgeIndex = 0; edgeIndex < edgeCount; edgeIndex++)
                     {
-                        shadowClippingEdges.Clear();
                         shadowClippingEdges.AddLast(itemEdges[edgeIndex]);
 
                         foreach (int shadowIndex in sortedShadowIndices)
@@ -537,12 +441,12 @@ namespace Whosyouradddy.ShadowCulling
                             {
                                 var nextClipNode = clipNode.Next;
                                 ref readonly Segment edge = ref clipNode.ValueRef;
-                                int clipsLength = edge.ClipFrom(shadow, out Segment[] clippedEdges);
-                                if (clipsLength != 1 || edge != clippedEdges[0])
+                                int clipCount = edge.ClipFrom(shadow, edgeClipBuffer);
+                                if (clipCount != 1 || edge != edgeClipBuffer[0])
                                 {
-                                    for (int clipIndex = 0; clipIndex < clipsLength; clipIndex++)
+                                    for (int clipIndex = 0; clipIndex < clipCount; clipIndex++)
                                     {
-                                        shadowClippingEdges.AddBefore(clipNode, clippedEdges[clipIndex]);
+                                        shadowClippingEdges.AddBefore(clipNode, edgeClipBuffer[clipIndex]);
                                     }
                                     shadowClippingEdges.Remove(clipNode);
                                 }
@@ -550,7 +454,9 @@ namespace Whosyouradddy.ShadowCulling
                             } while (clipNode != null);
                         }
 
-                        if (shadowClippingEdges.Count > 0)
+                        bool refuseCulling = shadowClippingEdges.Count > 0;
+                        shadowClippingEdges.Clear();
+                        if (refuseCulling)
                         {
                             goto ENTITY_REFUSE_CULLING;
                         }
@@ -562,8 +468,11 @@ namespace Whosyouradddy.ShadowCulling
 
                 ENTITY_REFUSE_CULLING:
                     item.Visible = true;
+
                 ENTITY_CULLING_COMPLETE:;
                 }
+
+                poolLinkedListSegment.Return(shadowClippingEdges);
 
                 Interlocked.Add(ref totalCulled, entitiesCulled);
             }

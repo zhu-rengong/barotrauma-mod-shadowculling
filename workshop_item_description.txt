@@ -25,19 +25,19 @@ During rendering, items occluded by shadows are ignored, which significantly red
 [list]
 [*][i]shadowcullingtoggle[/i] [b]功能[/b] 开关阴影剔除
 [*][i]shadowcullingdebugonce[/i] [b]调试[/b] 执行一次阴影剔除
-[*][i]shadowcullingdebugdrawaabb[/i] [b]调试[/b] 绘制物品的AABB
+[*][i]shadowcullingdebugdraw[/i] [b]调试[/b] 绘制阴影区和物品AABB
 [*][i]shadowcullingdebuglog[/i] [b]调试[/b] 显示日志
 [/list]
 [list]
 [*][i]shadowcullingtoggle[/i] [b]Function[/b] Toggle shadow culling
 [*][i]shadowcullingdebugonce[/i] [b]Debug[/b] Perform shadow culling once
-[*][i]shadowcullingdebugdrawaabb[/i] [b]Debug[/b] Draw the AABB of items
+[*][i]shadowcullingdebugdraw[/i] [b]Debug[/b] Draw shadow regions and item AABBs
 [*][i]shadowcullingdebuglog[/i] [b]Debug[/b] Show logs
 [/list]
 [list]
 [*] [i]shadowcullingtoggle[/i] [b]Функция[/b] Включение/отключение отсечения по теням
 [*] [i]shadowcullingdebugonce[/i] [b]Отладка[/b] Выполнить отсечение по теням один раз
-[*] [i]shadowcullingdebugdrawaabb[/i] [b]Отладка[/b] Отобразить AABB объектов
+[*] [i]shadowcullingdebugdraw[/i] [b]Отладка[/b] Отобразить области теней и AABB объектов
 [*] [i]shadowcullingdebuglog[/i] [b]Отладка[/b] Показать логи
 [/list]
 
