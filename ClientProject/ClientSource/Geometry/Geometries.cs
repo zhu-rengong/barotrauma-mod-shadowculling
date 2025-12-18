@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using Microsoft.Xna.Framework;
 using ConvexHull = Barotrauma.Lights.ConvexHull;
 
@@ -34,6 +35,7 @@ namespace Whosyouradddy.ShadowCulling.Geometry
             Length = (float)Math.Sqrt(LengthSquared);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryGetIntersection(in Ray ray, ref Vector2 intersection)
         {
             ref readonly Vector2 rayOrigin = ref ray.Origin;
@@ -60,6 +62,13 @@ namespace Whosyouradddy.ShadowCulling.Geometry
             return true;
         }
 
+        public bool IntersectWith(in Ray ray)
+        {
+            Vector2 intersection = default;
+            return TryGetIntersection(ray, ref intersection);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryGetIntersection(in Segment other, ref Vector2 intersection)
         {
             ref readonly Vector2 otherStart = ref other.Start;
@@ -76,6 +85,12 @@ namespace Whosyouradddy.ShadowCulling.Geometry
             if (t < 0.0f || t > 1.0f) { return false; }
             intersection = Start + StartToEnd * t;
             return true;
+        }
+
+        public bool IntersectWith(in Segment other)
+        {
+            Vector2 intersection = default;
+            return TryGetIntersection(other, ref intersection);
         }
 
         public int ClipFrom(in Shadow shadow, Span<Segment> clips)

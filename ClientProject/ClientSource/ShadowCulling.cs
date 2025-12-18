@@ -110,7 +110,7 @@ namespace Whosyouradddy.ShadowCulling
         private static List<MapEntity> entitiesForCulling = new(8192);
         private const int CONCURRENCY_LEVEL = 6;
         private static ConcurrentDictionary<MapEntity, bool> isEntityCulled = new(CONCURRENCY_LEVEL, 8192);
-        private static Vector2? previousViewPos;
+        private static Vector2? previousViewRelativePos;
         private static ObjectPool<LinkedList<Segment>> poolLinkedListSegment = new(() => new());
 
         private static ParallelOptions cullingParallelOptions = new() { MaxDegreeOfParallelism = CONCURRENCY_LEVEL };
@@ -135,7 +135,7 @@ namespace Whosyouradddy.ShadowCulling
                 {
                     isEntityCulled.Clear();
                     cullingStateDirty = false;
-                    previousViewPos = null;
+                    previousViewRelativePos = null;
                 }
                 return;
             }
@@ -147,13 +147,17 @@ namespace Whosyouradddy.ShadowCulling
                 !head.IsSevered && !head.Removed
                     ? head.body.DrawPosition
                     : viewTarget.DrawPosition;
-
-            if (!previousViewPos.HasValue || (viewTargetPosition - previousViewPos.Value).LengthSquared() > 1e6f) { previousViewPos = viewTargetPosition; }
+            Vector2 viewRelativePosition = viewTargetPosition;
+            if (viewTarget.Submarine != null)
+            {
+                viewRelativePosition -= viewTarget.Submarine.DrawPosition;
+            }
+            if (!previousViewRelativePos.HasValue || (viewRelativePosition - previousViewRelativePos.Value).LengthSquared() > 1e6f) { previousViewRelativePos = viewRelativePosition; }
             Vector2 viewPosInterpolation;
-            viewPosInterpolation.X = viewTargetPosition.X * 0.1f + previousViewPos.Value.X * 0.9f;
-            viewPosInterpolation.Y = viewTargetPosition.Y * 0.1f + previousViewPos.Value.Y * 0.9f;
-            Vector2 viewDirection = viewPosInterpolation - previousViewPos.Value;
-            previousViewPos = viewPosInterpolation;
+            viewPosInterpolation.X = viewRelativePosition.X * 0.1f + previousViewRelativePos.Value.X * 0.9f;
+            viewPosInterpolation.Y = viewRelativePosition.Y * 0.1f + previousViewRelativePos.Value.Y * 0.9f;
+            Vector2 viewDirection = viewPosInterpolation - previousViewRelativePos.Value;
+            previousViewRelativePos = viewPosInterpolation;
 
             foreach (RayRange quadrant in quadrants.Values)
             {
@@ -320,12 +324,16 @@ namespace Whosyouradddy.ShadowCulling
                     {
                         bool predictStart = directionProjection < 0;
                         ref Vector2 vertex = ref (predictStart ? ref currentOccluder.Start : ref currentOccluder.End);
+                        // Segment tolerant = new(vertex, vertex + Vector2.Normalize(predictStart ? currentOccluder.StartToEnd : -currentOccluder.StartToEnd) * 10.0f);
                         bool shouldPredict = true;
 
                         foreach (int otherShadowIndex in sortedShadowIndices)
                         {
                             if (currentShadowIndex != otherShadowIndex)
                             {
+                                // ref readonly Segment otherOccluder = ref validShadowBuffer[otherShadowIndex].Occluder;
+                                // otherOccluder.IntersectWith(tolerant)
+                                // otherOccluder.ClipFrom(currentShadow, occluderClipBuffer) > 0
                                 if (validShadowBuffer[otherShadowIndex].Occluder.ToPointDistanceSquared(vertex) < 100.0f)
                                 {
                                     shouldPredict = false;
