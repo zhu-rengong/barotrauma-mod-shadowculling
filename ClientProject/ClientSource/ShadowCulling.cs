@@ -95,8 +95,8 @@ namespace Whosyouradddy.ShadowCulling
         }
 
         private const int ENTITIES_PER_CULLING_BATCH = 65;
-        private const double CULLING_UPDATE_INTERVAL_SECONDS = 0.05;
-        private const float SHADOW_PREDICTION_TOLERANCE_MULTIPLIER = 5000.0f;
+        private const double CULLING_INTERVAL = 0.05;
+        private const float SHADOW_PREDICTION_TOLERANCE_MULTIPLIER = 1000.0f;
         private static double lastCullingUpdateTime;
         private static double lastPerformanceLogTime;
         private static bool cullingStateDirty = false;
@@ -110,7 +110,7 @@ namespace Whosyouradddy.ShadowCulling
         private static List<MapEntity> entitiesForCulling = new(8192);
         private const int CONCURRENCY_LEVEL = 6;
         private static ConcurrentDictionary<MapEntity, bool> isEntityCulled = new(CONCURRENCY_LEVEL, 8192);
-        private static Vector2 previousViewTargetPosition;
+        private static Vector2? previousViewPos;
         private static ObjectPool<LinkedList<Segment>> poolLinkedListSegment = new(() => new());
 
         private static ParallelOptions cullingParallelOptions = new() { MaxDegreeOfParallelism = CONCURRENCY_LEVEL };
@@ -135,19 +135,32 @@ namespace Whosyouradddy.ShadowCulling
                 {
                     isEntityCulled.Clear();
                     cullingStateDirty = false;
-                    previousViewTargetPosition = Vector2.Zero;
+                    previousViewPos = null;
                 }
                 return;
             }
 
-            if (previousViewTargetPosition == Vector2.Zero) { previousViewTargetPosition = viewTarget.Position; }
-            Vector2 currentViewPosition = Timing.Interpolate(previousViewTargetPosition, viewTarget.Position);
-            Vector2 viewDirection = currentViewPosition - previousViewTargetPosition;
-            previousViewTargetPosition = currentViewPosition;
+            if (lastCullingUpdateTime > Timing.TotalTime - CULLING_INTERVAL) { return; }
 
-            if (lastCullingUpdateTime > Timing.TotalTime - CULLING_UPDATE_INTERVAL_SECONDS) { return; }
+            Vector2 viewTargetPosition = viewTarget is Character character &&
+                character.AnimController?.GetLimb(LimbType.Head) is Limb head &&
+                !head.IsSevered && !head.Removed
+                    ? head.body.DrawPosition
+                    : viewTarget.DrawPosition;
 
-            cullingPerformanceTimer.Restart();
+            if (!previousViewPos.HasValue || (viewTargetPosition - previousViewPos.Value).LengthSquared() > 1e6f) { previousViewPos = viewTargetPosition; }
+            Vector2 viewPosInterpolation;
+            viewPosInterpolation.X = viewTargetPosition.X * 0.1f + previousViewPos.Value.X * 0.9f;
+            viewPosInterpolation.Y = viewTargetPosition.Y * 0.1f + previousViewPos.Value.Y * 0.9f;
+            Vector2 viewDirection = viewPosInterpolation - previousViewPos.Value;
+            previousViewPos = viewPosInterpolation;
+
+            foreach (RayRange quadrant in quadrants.Values)
+            {
+                quadrant.DoCalculate(viewTargetPosition);
+            }
+
+            cullingPerformanceTimer.Reset();
 
             int validShadowNumber = 0;
             Span<Segment> occluderClipBuffer = stackalloc Segment[3];
@@ -157,8 +170,6 @@ namespace Whosyouradddy.ShadowCulling
             isEntityCulled.Clear();
 
             Rectangle cameraViewBounds = camera.WorldView;
-
-            Vector2 lightSourcePosition = Vector2.Zero;
 
             // Get the convex hulls that intersect with the camera viewport
             foreach (ConvexHullList hullList in ConvexHull.HullLists)
@@ -172,10 +183,13 @@ namespace Whosyouradddy.ShadowCulling
                     // Here, it is necessary to convert its origin to the top-left corner to maintain consistency with other world rectangles.
                     convexHullAABB.Y += convexHullAABB.Height;
 
+                    Vector2 offsetToAbs = Vector2.Zero;
                     if (convexHull.ParentEntity?.Submarine is Submarine parentSubmarine)
                     {
-                        convexHullAABB.X += (int)parentSubmarine.DrawPosition.X;
-                        convexHullAABB.Y += (int)parentSubmarine.DrawPosition.Y;
+                        offsetToAbs.X = parentSubmarine.DrawPosition.X;
+                        offsetToAbs.Y = parentSubmarine.DrawPosition.Y;
+                        convexHullAABB.X += (int)offsetToAbs.X;
+                        convexHullAABB.Y += (int)offsetToAbs.Y;
                     }
 
                     if (convexHullAABB.X > cameraViewBounds.X + cameraViewBounds.Width) { continue; }
@@ -189,51 +203,21 @@ namespace Whosyouradddy.ShadowCulling
                         continue;
                     }
 
-                    VertexPositionColor[] shadowVertices = convexHull.ShadowVertices;
+                    Vector2 vertexPos0 = convexHull.losVertices[0].Pos + convexHull.losOffsets[0] + offsetToAbs;
+                    Vector2 vertexPos1 = convexHull.losVertices[1].Pos + convexHull.losOffsets[1] + offsetToAbs;
+                    if (Vector2.DistanceSquared(vertexPos0, vertexPos1) < 1.0f) { continue; }
 
-                    Vector2 occluderVertexStart = new(shadowVertices[0].Position.X, shadowVertices[0].Position.Y); // vertexPos1
-                    Vector2 occluderVertexEnd = new(shadowVertices[1].Position.X, shadowVertices[1].Position.Y); // vertexPos0
-                    Vector2 extrudedVertexEnd = new(shadowVertices[4].Position.X, shadowVertices[4].Position.Y); // extruded0
-                    Vector2 extrudedVertexStart = new(shadowVertices[5].Position.X, shadowVertices[5].Position.Y); // extruded1
-
-                    // true if ShadowVertices is reversed, we just reverse back.
-                    if ((occluderVertexEnd - occluderVertexStart).LengthSquared() > (extrudedVertexEnd - extrudedVertexStart).LengthSquared())
-                    {
-                        (occluderVertexStart, extrudedVertexStart) = (extrudedVertexStart, occluderVertexStart);
-                        (occluderVertexEnd, extrudedVertexEnd) = (extrudedVertexEnd, occluderVertexEnd);
-                    }
-
-                    if (lightSourcePosition == Vector2.Zero)
-                    {
-                        if (GetLineIntersection(
-                            occluderVertexStart, extrudedVertexStart,
-                            extrudedVertexEnd, occluderVertexEnd,
-                            areLinesInfinite: true, out Vector2 intersection))
-                        {
-                            lightSourcePosition = intersection;
-                        }
-                        else
-                        {
-                            lightSourcePosition = viewTarget.DrawPosition;
-                        }
-
-                        foreach (RayRange quadrant in quadrants.Values)
-                        {
-                            quadrant.DoCaculate(lightSourcePosition);
-                        }
-                    }
+                    Vector2 occluderVertexOffset = Vector2.Normalize(vertexPos1 - vertexPos0);
 
                     if (validShadowNumber >= validShadowBuffer.Length)
                     {
                         Array.Resize(ref validShadowBuffer, validShadowBuffer.Length + 1024);
                     }
 
-                    Vector2 occluderDirection = Vector2.Normalize(occluderVertexEnd - occluderVertexStart);
-
                     validShadowBuffer[validShadowNumber] = new(
-                        lightSource: lightSourcePosition,
-                        vertex1: occluderVertexEnd + occluderDirection * 1.0f,
-                        vertex2: occluderVertexStart - occluderDirection * 1.0f
+                        lightSource: viewTargetPosition,
+                        vertex1: vertexPos0 - occluderVertexOffset,
+                        vertex2: vertexPos1 + occluderVertexOffset
                     );
 
                     shadowIndexLinkedList.AddLast(validShadowNumber);
@@ -260,7 +244,7 @@ namespace Whosyouradddy.ShadowCulling
             // and using the nearer hulls to prioritize determining whether farther hulls are in shadow
             // can significantly improve performance.
             shadowIndexLinkedList = new(shadowIndexLinkedList.OrderBy(
-                shadowIndex => (lightSourcePosition - validShadowBuffer[shadowIndex].Occluder.Center).LengthSquared()
+                shadowIndex => (viewTargetPosition - validShadowBuffer[shadowIndex].Occluder.Center).LengthSquared()
             ));
 
             LinkedListNode<int>? currentShadowNode = shadowIndexLinkedList.Last;
@@ -323,33 +307,56 @@ namespace Whosyouradddy.ShadowCulling
             sortedShadowIndices.AddRange(shadowIndexLinkedList);
 
             // Calculate the shadow tolerance based on the view's predicted position to avoid "face-close loading".
-            if (viewDirection.Length() > 0.1f)
+            cullingPerformanceTimer.Start();
+            if (viewDirection.LengthSquared() > 0.01f)
             {
-                Vector2 predictedPosition = lightSourcePosition + viewDirection;
-                foreach (int shadowIndex in sortedShadowIndices)
+                Vector2 predictedPosition = viewTargetPosition + viewDirection;
+                foreach (int currentShadowIndex in sortedShadowIndices)
                 {
-                    ref Shadow shadow = ref validShadowBuffer[shadowIndex];
-                    ref Segment occluder = ref shadow.Occluder;
+                    ref Shadow currentShadow = ref validShadowBuffer[currentShadowIndex];
+                    ref Segment currentOccluder = ref currentShadow.Occluder;
 
-                    float directionProjection = Vector2.Dot(occluder.StartToEnd, viewDirection);
+                    float directionProjection = Vector2.Dot(currentOccluder.StartToEnd, viewDirection);
                     if (Math.Abs(directionProjection) > 1e-2f)
                     {
-                        float maximumTrimAmount = occluder.Length - 1.0f;
-                        if (directionProjection < 0)
+                        bool predictStart = directionProjection < 0;
+                        ref Vector2 vertex = ref (predictStart ? ref currentOccluder.Start : ref currentOccluder.End);
+                        bool shouldPredict = true;
+
+                        foreach (int otherShadowIndex in sortedShadowIndices)
                         {
-                            float predictionOffset = MathF.Min(MathF.Abs(PredictAngleChange(occluder.Start, lightSourcePosition, predictedPosition)) * SHADOW_PREDICTION_TOLERANCE_MULTIPLIER, maximumTrimAmount);
-                            occluder.Start += Vector2.Normalize(occluder.StartToEnd) * predictionOffset;
-                        }
-                        else
-                        {
-                            float predictionOffset = MathF.Min(MathF.Abs(PredictAngleChange(occluder.End, lightSourcePosition, predictedPosition)) * SHADOW_PREDICTION_TOLERANCE_MULTIPLIER, maximumTrimAmount);
-                            occluder.End += Vector2.Normalize(-occluder.StartToEnd) * predictionOffset;
+                            if (currentShadowIndex != otherShadowIndex)
+                            {
+                                if (validShadowBuffer[otherShadowIndex].Occluder.ToPointDistanceSquared(vertex) < 100.0f)
+                                {
+                                    shouldPredict = false;
+                                    break;
+                                }
+                            }
                         }
 
-                        shadow.DoCaculate(lightSourcePosition, occluder.Start, occluder.End);
+                        if (shouldPredict)
+                        {
+                            float predictionOffset = MathF.Min(
+                                MathF.Abs(PredictAngleChange(vertex, viewTargetPosition, predictedPosition)) * SHADOW_PREDICTION_TOLERANCE_MULTIPLIER,
+                                currentOccluder.Length - 1.0f);
+
+                            if (predictStart)
+                            {
+                                currentOccluder.Start += Vector2.Normalize(currentOccluder.StartToEnd) * predictionOffset;
+                            }
+                            else
+                            {
+                                currentOccluder.End += Vector2.Normalize(-currentOccluder.StartToEnd) * predictionOffset;
+                            }
+
+                            currentShadow.DoCalculate(viewTargetPosition, currentOccluder.Start, currentOccluder.End);
+                        }
+
                     }
                 }
             }
+            cullingPerformanceTimer.Stop();
 
             entitiesForCulling.Clear();
             entitiesForCulling.AddRange(Submarine.VisibleEntities);
@@ -377,12 +384,11 @@ namespace Whosyouradddy.ShadowCulling
                     // The origin is at the top left
                     RectangleF entityAABB;
 
+                    if (entity.IsHidden) { continue; }
+
                     if (entity is Item item)
                     {
-                        if (item.IsHidden
-                            || !item.cachedVisibleExtents.HasValue
-                            || item.IsLadder
-                            || item.isWire)
+                        if (!item.cachedVisibleExtents.HasValue || item.isWire)
                         {
                             continue;
                         }
@@ -401,7 +407,7 @@ namespace Whosyouradddy.ShadowCulling
                     }
                     else if (entity is Structure structure)
                     {
-                        if (structure.IsHidden || structure.Prefab.DecorativeSprites.Length > 0)
+                        if (structure.Prefab.DecorativeSprites.Length > 0)
                         {
                             continue;
                         }
@@ -600,6 +606,24 @@ namespace Whosyouradddy.ShadowCulling
             {
                 __result.X = 0.0f;
                 __result.Y = 0.0f;
+                return false;
+            }
+        }
+
+        // In Vanilla, if you are too far from the center of a ladder,
+        // you won't be able to see it. We can fix this by modifying its draw size.
+        [HarmonyPatch(
+             declaringType: typeof(Ladder),
+             methodName: nameof(Ladder.DrawSize),
+             methodType: MethodType.Getter
+        )]
+        class Ladder_DrawSize
+        {
+            static bool Prefix(Ladder __instance, ref Vector2 __result)
+            {
+                if (__instance.backgroundSprite == null) { return true; }
+                __result.X = __instance.backgroundSprite.size.X * __instance.item.Scale;
+                __result.Y = __instance.item.Rect.Height;
                 return false;
             }
         }

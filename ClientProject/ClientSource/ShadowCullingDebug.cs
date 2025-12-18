@@ -74,9 +74,11 @@ namespace Whosyouradddy.ShadowCulling
 
                         foreach (var mapEntity in Submarine.VisibleEntities)
                         {
+                            if (mapEntity.IsHidden) { continue; }
+
                             if (DebugDrawItem && mapEntity is Item item)
                             {
-                                if (item.IsHidden || item.isWire || item.IsLadder)
+                                if (item.isWire)
                                 {
                                     continue;
                                 }
@@ -123,7 +125,7 @@ namespace Whosyouradddy.ShadowCulling
                             }
                             else if (DebugDrawStructure && mapEntity is Structure structure)
                             {
-                                if (structure.IsHidden || structure.Prefab.DecorativeSprites.Length > 0)
+                                if (structure.Prefab.DecorativeSprites.Length > 0)
                                 {
                                     continue;
                                 }

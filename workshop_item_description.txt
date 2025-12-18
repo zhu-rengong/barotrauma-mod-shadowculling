@@ -8,16 +8,13 @@ During rendering, entities (items, structures) occluded by shadows are ignored, 
 [hr][/hr]
 [h2]优化细节 | Optimize details | Оптимизировать детали[/h2]
 [list]
-[*]多核调度，同时支持8个逻辑核心
-[*]凸包预筛选，提前过滤阴影中的凸包，倍数级减少处理量。
+[*]多核调度，同时支持6个逻辑核心
 [/list]
 [list]
-[*]Multi-core scheduling, supporting up to 8 logical cores simultaneously.
-[*]Pre-filter convex hulls to exclude those in shadows early, reducing the processing load by multiples.
+[*]Multi-core scheduling, supporting up to 6 logical cores simultaneously.
 [/list]
 [list]
-[*] Многопроцессорное планирование с одновременной поддержкой до 8 логических ядер.
-[*] Предварительная фильтрация выпуклых оболочек для раннего исключения находящихся в тенях, что в разы снижает объем обработки.
+[*] Многопроцессорное планирование с одновременной поддержкой до 6 логических ядер.
 [/list]
 
 [hr][/hr]

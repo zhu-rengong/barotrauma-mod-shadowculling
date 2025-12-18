@@ -22,10 +22,10 @@ namespace Whosyouradddy.ShadowCulling.Geometry
             Center = default;
             LengthSquared = default;
             Length = default;
-            DoCaculate();
+            DoCalculate();
         }
 
-        public void DoCaculate()
+        public void DoCalculate()
         {
             StartToEnd = End - Start;
             Center.X = (Start.X + End.X) / 2;
@@ -265,6 +265,31 @@ namespace Whosyouradddy.ShadowCulling.Geometry
                 && originToSegment.CrossProduct(end.Direction) * dir >= 0;
         }
 
+        public float ToPointDistanceSquared(Vector2 point)
+        {
+            if (Length == 0.0f)
+            {
+                return Vector2.DistanceSquared(Start, point);
+            }
+
+            Vector2 toPoint = point - Start;
+            float projection = Vector2.Dot(toPoint, StartToEnd) / LengthSquared;
+
+            if (projection >= 0.0f && projection <= 1.0f)
+            {
+                float cross = StartToEnd.CrossProduct(toPoint);
+                return cross * cross / LengthSquared;
+            }
+            else if (projection < 0.0f)
+            {
+                return Vector2.DistanceSquared(Start, point);
+            }
+            else
+            {
+                return Vector2.DistanceSquared(End, point);
+            }
+        }
+
 
         public override string ToString()
         {
@@ -303,10 +328,10 @@ namespace Whosyouradddy.ShadowCulling.Geometry
         {
             Origin = origin;
             Direction = direction;
-            DoCaculate();
+            DoCalculate();
         }
 
-        public void DoCaculate()
+        public void DoCalculate()
         {
             if (Direction != Vector2.Zero)
             {
@@ -328,15 +353,15 @@ namespace Whosyouradddy.ShadowCulling.Geometry
             Start = new(origin, start);
             End = new(origin, end);
             RayScanDir = default;
-            DoCaculate();
+            DoCalculate();
         }
 
-        public void DoCaculate()
+        public void DoCalculate()
         {
             RayScanDir = Start.Direction.CrossProduct(End.Direction);
         }
 
-        public void DoCaculate(in Vector2 origin)
+        public void DoCalculate(in Vector2 origin)
         {
             Origin.X = origin.X;
             Origin.Y = origin.Y;
@@ -362,15 +387,15 @@ namespace Whosyouradddy.ShadowCulling.Geometry
             Ray1 = new(vertex1, vertex1 - lightSource);
             Ray2 = new(vertex2, vertex2 - lightSource);
             RayScanDir = default;
-            DoCaculate();
+            DoCalculate();
         }
 
-        public void DoCaculate()
+        public void DoCalculate()
         {
             RayScanDir = Ray1.Direction.CrossProduct(Ray2.Direction);
         }
 
-        public void DoCaculate(in Vector2 lightSource, in Vector2 vertex1, in Vector2 vertex2)
+        public void DoCalculate(in Vector2 lightSource, in Vector2 vertex1, in Vector2 vertex2)
         {
             LightSource.X = lightSource.X;
             LightSource.Y = lightSource.Y;
@@ -379,21 +404,21 @@ namespace Whosyouradddy.ShadowCulling.Geometry
             Occluder.Start.Y = vertex1.Y;
             Occluder.End.X = vertex2.X;
             Occluder.End.Y = vertex2.Y;
-            Occluder.DoCaculate();
+            Occluder.DoCalculate();
 
             Ray1.Origin.X = vertex1.X;
             Ray1.Origin.Y = vertex1.Y;
             Ray1.Direction.X = vertex1.X - lightSource.X;
             Ray1.Direction.Y = vertex1.Y - lightSource.Y;
-            Ray1.DoCaculate();
+            Ray1.DoCalculate();
 
             Ray2.Origin.X = vertex2.X;
             Ray2.Origin.Y = vertex2.Y;
             Ray2.Direction.X = vertex2.X - lightSource.X;
             Ray2.Direction.Y = vertex2.Y - lightSource.Y;
-            Ray2.DoCaculate();
+            Ray2.DoCalculate();
 
-            DoCaculate();
+            DoCalculate();
         }
 
         public override int GetHashCode()
