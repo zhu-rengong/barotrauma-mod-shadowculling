@@ -18,6 +18,18 @@ During rendering, entities (items, structures) occluded by shadows are ignored, 
 [/list]
 
 [hr][/hr]
+[h2]使用 | Usage | Использование[/h2]
+[list]
+[*]请遵循安装步骤启用 [u][url=https://steamcommunity.com/sharedfiles/filedetails/?id=2559634234]Lua for Barotrauma[/url][/u] 并经您允许运行C#脚本，模组纯客户端有效，即插即用。
+[/list]
+[list]
+[*]Please follow the installation steps to enable [u]Lua for Barotrauma[/u] and allow it to run C# scripts with your permission. The mod is client-side only and is plug-and-play.
+[/list]
+[list]
+[*]Следуйте инструкциям по установке, чтобы включить [u]Lua For Barotrauma[/u] и разрешить запуск C# скриптов с вашего согласия. Мод работает исключительно на стороне клиента, установка осуществляется по принципу «plug-and-play».
+[/list]
+
+[hr][/hr]
 [h2]控制台命令 | Console Commands | Консольные команды[/h2]
 [list]
 [*][i]shadowcullingtoggle[/i] [b]功能[/b] 开关阴影剔除
@@ -34,14 +46,14 @@ During rendering, entities (items, structures) occluded by shadows are ignored, 
 [list]
 [*] [i]shadowcullingtoggle[/i] [b]Функция[/b] Включение/отключение отсечения по теням
 [*] [i]shadowcullingdebugonce[/i] [b]Отладка[/b] Выполнить отсечение по теням один раз
-[*] [i]shadowcullingdebugdraw[/i] [b]Отладка[/b] Отобразить области теней и AABB объектов (предметов) и конструкций.
+[*] [i]shadowcullingdebugdraw[/i] [b]Отладка[/b] Отобразить области теней и AABB объектов (предметов) и конструкций
 [*] [i]shadowcullingdebuglog[/i] [b]Отладка[/b] Показать логи
 [/list]
 
 [hr][/hr]
 [url=https://github.com/zhu-rengong/barotrauma-mod-shadowculling]Github[/url]
 
-[img=https://images.steamusercontent.com/ugc/11953855829976146722/4AB6E2DDFBC5C782B1712B097EDCA2A14E74A8D5/?imw=660&imh=1024&ima=fit&impolicy=Letterbox&imcolor=%23000000&letterbox=true][/img]
+[img=https://images.steamusercontent.com/ugc/12955598015651579469/F1A927E4B12162CC6CEC3FC4B7C93120CDA4EFC2/?imw=1024&&ima=fit&impolicy=Letterbox&imcolor=%23000000&letterbox=false][/img]
 
 [hr][/hr]
 [h2]仍在完善中 | WIP Stage | Находится в стадии разработки[/h2]

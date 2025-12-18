@@ -160,7 +160,7 @@ namespace Whosyouradddy.ShadowCulling
                 quadrant.DoCalculate(viewTargetPosition);
             }
 
-            cullingPerformanceTimer.Reset();
+            cullingPerformanceTimer.Restart();
 
             int validShadowNumber = 0;
             Span<Segment> occluderClipBuffer = stackalloc Segment[3];
@@ -307,7 +307,6 @@ namespace Whosyouradddy.ShadowCulling
             sortedShadowIndices.AddRange(shadowIndexLinkedList);
 
             // Calculate the shadow tolerance based on the view's predicted position to avoid "face-close loading".
-            cullingPerformanceTimer.Start();
             if (viewDirection.LengthSquared() > 0.01f)
             {
                 Vector2 predictedPosition = viewTargetPosition + viewDirection;
@@ -356,7 +355,6 @@ namespace Whosyouradddy.ShadowCulling
                     }
                 }
             }
-            cullingPerformanceTimer.Stop();
 
             entitiesForCulling.Clear();
             entitiesForCulling.AddRange(Submarine.VisibleEntities);
