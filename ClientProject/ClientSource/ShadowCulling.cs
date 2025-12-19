@@ -44,8 +44,8 @@ namespace Whosyouradddy.ShadowCulling
         }
 
         [HarmonyPatch(
-             declaringType: typeof(Submarine),
-             methodName: nameof(Submarine.CullEntities)
+            declaringType: typeof(Submarine),
+            methodName: nameof(Submarine.CullEntities)
         )]
         class Submarine_CullEntities
         {
@@ -59,9 +59,9 @@ namespace Whosyouradddy.ShadowCulling
         }
 
         [HarmonyPatch(
-             declaringType: typeof(Item),
-             methodName: nameof(Item.Draw),
-             argumentTypes: new Type[] { typeof(SpriteBatch), typeof(bool), typeof(bool) }
+            declaringType: typeof(Item),
+            methodName: nameof(Item.Draw),
+            argumentTypes: new Type[] { typeof(SpriteBatch), typeof(bool), typeof(bool) }
         )]
         class Item_Draw
         {
@@ -77,9 +77,9 @@ namespace Whosyouradddy.ShadowCulling
         }
 
         [HarmonyPatch(
-             declaringType: typeof(Structure),
-             methodName: nameof(Structure.Draw),
-             argumentTypes: new Type[] { typeof(SpriteBatch), typeof(bool), typeof(bool) }
+            declaringType: typeof(Structure),
+            methodName: nameof(Structure.Draw),
+            argumentTypes: new Type[] { typeof(SpriteBatch), typeof(bool), typeof(bool) }
         )]
         class Structure_Draw
         {
@@ -94,8 +94,25 @@ namespace Whosyouradddy.ShadowCulling
             }
         }
 
-        private const int ENTITIES_PER_CULLING_BATCH = 65;
-        private const double CULLING_INTERVAL = 0.05;
+        [HarmonyPatch(
+            declaringType: typeof(Entity),
+            methodName: nameof(Entity.RemoveAll)
+         )]
+        class Entity_RemoveAll
+        {
+            static void Postfix()
+            {
+                hullsForCulling.Clear();
+                entitiesForCulling.Clear();
+                isEntityCulled.Clear();
+                entityHull.Clear();
+                LuaCsLogger.LogMessage($"Mod:ShadowCulling | Reset");
+            }
+        }
+
+        private const int HULLS_PER_CULLING = 15;
+        private const int ENTITIES_PER_CULLING = 65;
+        private const double CULLING_INTERVAL = 0.1;
         private const float SHADOW_PREDICTION_TOLERANCE_MULTIPLIER = 1000.0f;
         private static double lastCullingUpdateTime;
         private static double lastPerformanceLogTime;
@@ -108,12 +125,15 @@ namespace Whosyouradddy.ShadowCulling
         private static List<int> sortedShadowIndices = new(1024);
         private static LinkedList<Segment> shadowClippingOccluders = new();
         private static List<MapEntity> entitiesForCulling = new(8192);
-        private const int CONCURRENCY_LEVEL = 6;
+        private static List<Hull> hullsForCulling = new(1024);
+        private const int PARALLELISM = 4;
+        private const int CONCURRENCY_LEVEL = PARALLELISM * 3;
+        private static ConcurrentDictionary<MapEntity, Hull?> entityHull = new(CONCURRENCY_LEVEL, 8192);
         private static ConcurrentDictionary<MapEntity, bool> isEntityCulled = new(CONCURRENCY_LEVEL, 8192);
         private static Vector2? previousViewRelativePos;
         private static ObjectPool<LinkedList<Segment>> poolLinkedListSegment = new(() => new());
 
-        private static ParallelOptions cullingParallelOptions = new() { MaxDegreeOfParallelism = CONCURRENCY_LEVEL };
+        private static ParallelOptions cullingParallelOptions = new() { MaxDegreeOfParallelism = PARALLELISM };
         private static Stopwatch cullingPerformanceTimer = new();
 
         public partial void InitializeProjSpecific()
@@ -126,14 +146,21 @@ namespace Whosyouradddy.ShadowCulling
 
         public static void PerformEntityCulling()
         {
-            if (!GameMain.LightManager.LosEnabled
+            if (SubEditorScreen.IsSubEditor()
+                || !GameMain.LightManager.LosEnabled
                 || GameMain.LightManager.LosMode == LosMode.None
                 || LightManager.ViewTarget is not Entity viewTarget
-                || Screen.Selected?.Cam is not Camera camera)
+                || Screen.Selected?.Cam is not Camera camera
+                || (GameMain.IsSingleplayer
+                    ? GameMain.GameSession == null || !GameMain.GameSession.IsRunning
+                    : !GameMain.Client?.GameStarted ?? true))
             {
                 if (cullingStateDirty)
                 {
+                    hullsForCulling.Clear();
+                    entitiesForCulling.Clear();
                     isEntityCulled.Clear();
+                    entityHull.Clear();
                     cullingStateDirty = false;
                     previousViewRelativePos = null;
                 }
@@ -171,7 +198,6 @@ namespace Whosyouradddy.ShadowCulling
 
             shadowIndexLinkedList.Clear();
             shadowIndexQuadrant.Clear();
-            isEntityCulled.Clear();
 
             Rectangle cameraViewBounds = camera.WorldView;
 
@@ -319,22 +345,16 @@ namespace Whosyouradddy.ShadowCulling
                     ref Shadow currentShadow = ref validShadowBuffer[currentShadowIndex];
                     ref Segment currentOccluder = ref currentShadow.Occluder;
 
-                    float directionProjection = Vector2.Dot(currentOccluder.StartToEnd, viewDirection);
-                    if (Math.Abs(directionProjection) > 1e-2f)
+                    Vector2 startToView = viewTargetPosition - currentOccluder.Start;
+                    if (startToView.CrossProduct(currentOccluder.StartToEnd) * startToView.CrossProduct(viewDirection) < 0)
                     {
-                        bool predictStart = directionProjection < 0;
-                        ref Vector2 vertex = ref (predictStart ? ref currentOccluder.Start : ref currentOccluder.End);
-                        // Segment tolerant = new(vertex, vertex + Vector2.Normalize(predictStart ? currentOccluder.StartToEnd : -currentOccluder.StartToEnd) * 10.0f);
                         bool shouldPredict = true;
 
                         foreach (int otherShadowIndex in sortedShadowIndices)
                         {
                             if (currentShadowIndex != otherShadowIndex)
                             {
-                                // ref readonly Segment otherOccluder = ref validShadowBuffer[otherShadowIndex].Occluder;
-                                // otherOccluder.IntersectWith(tolerant)
-                                // otherOccluder.ClipFrom(currentShadow, occluderClipBuffer) > 0
-                                if (validShadowBuffer[otherShadowIndex].Occluder.ToPointDistanceSquared(vertex) < 100.0f)
+                                if (validShadowBuffer[otherShadowIndex].Occluder.ToPointDistanceSquared(currentOccluder.Start) < 100.0f)
                                 {
                                     shouldPredict = false;
                                     break;
@@ -345,88 +365,179 @@ namespace Whosyouradddy.ShadowCulling
                         if (shouldPredict)
                         {
                             float predictionOffset = MathF.Min(
-                                MathF.Abs(PredictAngleChange(vertex, viewTargetPosition, predictedPosition)) * SHADOW_PREDICTION_TOLERANCE_MULTIPLIER,
+                                MathF.Abs(PredictAngleChange(currentOccluder.Start, viewTargetPosition, predictedPosition)) * SHADOW_PREDICTION_TOLERANCE_MULTIPLIER,
                                 currentOccluder.Length - 1.0f);
-
-                            if (predictStart)
-                            {
-                                currentOccluder.Start += Vector2.Normalize(currentOccluder.StartToEnd) * predictionOffset;
-                            }
-                            else
-                            {
-                                currentOccluder.End += Vector2.Normalize(-currentOccluder.StartToEnd) * predictionOffset;
-                            }
-
+                            currentOccluder.Start += Vector2.Normalize(currentOccluder.StartToEnd) * predictionOffset;
                             currentShadow.DoCalculate(viewTargetPosition, currentOccluder.Start, currentOccluder.End);
                         }
+                    }
 
+                    Vector2 endToView = viewTargetPosition - currentOccluder.End;
+                    if (endToView.CrossProduct(currentOccluder.StartToEnd) * endToView.CrossProduct(viewDirection) > 0)
+                    {
+                        bool shouldPredict = true;
+
+                        foreach (int otherShadowIndex in sortedShadowIndices)
+                        {
+                            if (currentShadowIndex != otherShadowIndex)
+                            {
+                                if (validShadowBuffer[otherShadowIndex].Occluder.ToPointDistanceSquared(currentOccluder.End) < 100.0f)
+                                {
+                                    shouldPredict = false;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (shouldPredict)
+                        {
+                            float predictionOffset = MathF.Min(
+                                MathF.Abs(PredictAngleChange(currentOccluder.End, viewTargetPosition, predictedPosition)) * SHADOW_PREDICTION_TOLERANCE_MULTIPLIER,
+                                currentOccluder.Length - 1.0f);
+                            currentOccluder.End += Vector2.Normalize(-currentOccluder.StartToEnd) * predictionOffset;
+                            currentShadow.DoCalculate(viewTargetPosition, currentOccluder.Start, currentOccluder.End);
+                        }
                     }
                 }
+            }
+
+            int totalCulled = 0;
+            isEntityCulled.Clear();
+
+            hullsForCulling.Clear();
+            foreach (Hull hull in Hull.HullList)
+            {
+                if (hull.Submarine is Submarine sub && Submarine.visibleSubs.Contains(sub)
+                    && hull.Volume > 40000.0f
+                    && Submarine.RectsOverlap(hull.WorldRect, cameraViewBounds))
+                {
+                    hullsForCulling.Add(hull);
+                }
+            }
+
+            if (hullsForCulling.Count > HULLS_PER_CULLING)
+            {
+                Parallel.For(
+                    fromInclusive: 0,
+                    toExclusive: (hullsForCulling.Count + HULLS_PER_CULLING - 1) / HULLS_PER_CULLING,
+                    parallelOptions: cullingParallelOptions,
+                    body: index =>
+                    {
+                        int startIndex = index * HULLS_PER_CULLING;
+                        Cull(hullsForCulling,
+                            fromInclusive: startIndex,
+                            toExclusive: Math.Min(startIndex + HULLS_PER_CULLING, hullsForCulling.Count),
+                            hullRenderCulling: true);
+                    }
+                );
+            }
+            else
+            {
+                Cull(hullsForCulling, fromInclusive: 0, toExclusive: hullsForCulling.Count, hullRenderCulling: true);
             }
 
             entitiesForCulling.Clear();
             entitiesForCulling.AddRange(Submarine.VisibleEntities);
 
-            int totalCulled = 0;
-            Parallel.For(
-                fromInclusive: 0,
-                toExclusive: (entitiesForCulling.Count + ENTITIES_PER_CULLING_BATCH - 1) / ENTITIES_PER_CULLING_BATCH,
-                parallelOptions: cullingParallelOptions,
-                body: ProcessCullingBatch
-            );
-
-            void ProcessCullingBatch(int batchIndex)
+            if (entitiesForCulling.Count > ENTITIES_PER_CULLING)
             {
-                int batchStartIndex = batchIndex * ENTITIES_PER_CULLING_BATCH;
-                int batchEndIndex = Math.Min(batchStartIndex + ENTITIES_PER_CULLING_BATCH, entitiesForCulling.Count);
+                Parallel.For(
+                    fromInclusive: 0,
+                    toExclusive: (entitiesForCulling.Count + ENTITIES_PER_CULLING - 1) / ENTITIES_PER_CULLING,
+                    parallelOptions: cullingParallelOptions,
+                    body: index =>
+                    {
+                        int startIndex = index * ENTITIES_PER_CULLING;
+                        Cull(entitiesForCulling,
+                            fromInclusive: startIndex,
+                            toExclusive: Math.Min(startIndex + ENTITIES_PER_CULLING, entitiesForCulling.Count),
+                            hullRenderCulling: false);
+                    }
+                );
+            }
+            else
+            {
+                Cull(entitiesForCulling, fromInclusive: 0, toExclusive: entitiesForCulling.Count, hullRenderCulling: false);
+            }
+
+            void Cull<T>(List<T> entities, int fromInclusive, int toExclusive, bool hullRenderCulling) where T : MapEntity
+            {
                 Span<Segment> entityEdges = stackalloc Segment[8];
                 Span<Segment> edgeClipBuffer = stackalloc Segment[3];
-                int entitiesCulled = 0;
                 LinkedList<Segment> shadowClippingEdges = poolLinkedListSegment.Get();
+                int entitiesCulled = 0;
 
-                for (int entityIndex = batchStartIndex; entityIndex < batchEndIndex; entityIndex++)
+                for (int entityIndex = fromInclusive; entityIndex < toExclusive; entityIndex++)
                 {
-                    MapEntity entity = entitiesForCulling[entityIndex];
+                    T entity = entities[entityIndex];
                     // The origin is at the top left
                     RectangleF entityAABB;
 
-                    if (entity.IsHidden) { continue; }
-
-                    if (entity is Item item)
+                    if (hullRenderCulling)
                     {
-                        if (!item.cachedVisibleExtents.HasValue || item.isWire)
-                        {
-                            continue;
-                        }
-
-                        entityAABB = item.cachedVisibleExtents.Value;
-                        entityAABB.Offset(item.DrawPosition.X, item.DrawPosition.Y);
-
-                        // In Vanilla, the AABB bounds calculation is messed up:
-                        // ClientSource/Items/Item.cs | cachedVisibleExtents = extents = new Rectangle(min.ToPoint(), max.ToPoint());
-                        // The correct one should be:
-                        // cachedVisibleExtents = extents = new Rectangle(min.ToPoint(), (max - min).ToPoint());
-                        // I have to calculate the sample points based on original cached extents in real-time here:
-                        entityAABB.Width *= 2;
-                        entityAABB.Height *= 2;
-                        entityAABB.Y += entityAABB.Height;
-                    }
-                    else if (entity is Structure structure)
-                    {
-                        if (structure.Prefab.DecorativeSprites.Length > 0)
-                        {
-                            continue;
-                        }
-
-                        entityAABB = Quad2D.FromSubmarineRectangle(structure.WorldRect).Rotated(
-                            structure.FlippedX != structure.FlippedY
-                                ? structure.RotationRad
-                                : -structure.RotationRad).BoundingAxisAlignedRectangle;
-                        entityAABB.Y += entityAABB.Height;
+                        entityAABB = entity.WorldRect;
                     }
                     else
                     {
-                        continue;
+                        switch (entity)
+                        {
+                            case Item item:
+                                if (!item.cachedVisibleExtents.HasValue || item.isWire)
+                                {
+                                    continue;
+                                }
+
+                                entityAABB = item.cachedVisibleExtents.Value;
+                                entityAABB.Offset(item.DrawPosition.X, item.DrawPosition.Y);
+
+                                // In Vanilla, the AABB bounds calculation is messed up:
+                                // ClientSource/Items/Item.cs | cachedVisibleExtents = extents = new Rectangle(min.ToPoint(), max.ToPoint());
+                                // The correct one should be:
+                                // cachedVisibleExtents = extents = new Rectangle(min.ToPoint(), (max - min).ToPoint());
+                                // I have to calculate the sample points based on original cached extents in real-time here:
+                                entityAABB.Width *= 2;
+                                entityAABB.Height *= 2;
+                                entityAABB.Y += entityAABB.Height;
+
+                                if (item.CurrentHull is Hull itemHull && isEntityCulled.TryGetValue(itemHull, out bool _))
+                                {
+                                    RectangleF hullAABB = itemHull.WorldRect;
+                                    if (entityAABB.X > hullAABB.X && entityAABB.Y < hullAABB.Y
+                                        && entityAABB.X + entityAABB.Width < hullAABB.X + hullAABB.Width
+                                        && entityAABB.Y - entityAABB.Height > hullAABB.X - hullAABB.Height)
+                                    {
+                                        goto CULL;
+                                    }
+                                }
+                                break;
+                            case Structure structure:
+                                if (structure.Prefab.DecorativeSprites.Length > 0) { continue; }
+
+                                entityAABB = Quad2D.FromSubmarineRectangle(structure.WorldRect).Rotated(
+                                   structure.FlippedX != structure.FlippedY
+                                       ? structure.RotationRad
+                                       : -structure.RotationRad).BoundingAxisAlignedRectangle;
+                                entityAABB.Y += entityAABB.Height;
+
+                                if (!entityHull.TryGetValue(entity, out Hull? structureHull))
+                                {
+                                    entityHull.TryAdd(entity, structureHull = Hull.FindHull(structure.WorldPosition));
+                                }
+
+                                if (structureHull != null && isEntityCulled.TryGetValue(structureHull, out bool _))
+                                {
+                                    RectangleF hullAABB = structureHull.WorldRect;
+                                    if (entityAABB.X > hullAABB.X && entityAABB.Y < hullAABB.Y
+                                        && entityAABB.X + entityAABB.Width < hullAABB.X + hullAABB.Width
+                                        && entityAABB.Y - entityAABB.Height > hullAABB.X - hullAABB.Height)
+                                    {
+                                        goto CULL;
+                                    }
+                                }
+                                break;
+                            default:
+                                continue;
+                        }
                     }
 
                     Vector2 leftTop = new(entityAABB.X, entityAABB.Y);
@@ -450,7 +561,7 @@ namespace Whosyouradddy.ShadowCulling
                             {
                                 if (++numCoveredQuadrants > 2)
                                 {
-                                    goto ENTITY_CULLING_COMPLETE;
+                                    goto SKIP;
                                 }
                                 entityQuadrant |= quadrant;
                                 break;
@@ -524,13 +635,14 @@ namespace Whosyouradddy.ShadowCulling
                         shadowClippingEdges.Clear();
                         if (refuseCulling)
                         {
-                            goto ENTITY_CULLING_COMPLETE;
+                            goto SKIP;
                         }
                     }
 
+                CULL:
                     isEntityCulled.TryAdd(entity, true);
                     entitiesCulled++;
-                ENTITY_CULLING_COMPLETE:;
+                SKIP:;
                 }
 
                 poolLinkedListSegment.Return(shadowClippingEdges);
@@ -544,7 +656,7 @@ namespace Whosyouradddy.ShadowCulling
             if (DebugLog && Timing.TotalTime - lastPerformanceLogTime >= 2.0f)
             {
                 float averageCullingTime = GameMain.PerformanceCounter.GetAverageElapsedMillisecs("Mod:ShadowCulling");
-                LuaCsLogger.LogMessage($"Mod:ShadowCulling | Mean: {averageCullingTime} | Cull: {totalCulled}/{Submarine.VisibleEntities.Count()} | Shadows: {sortedShadowIndices.Count}/{validShadowNumber}");
+                LuaCsLogger.LogMessage($"Mod:ShadowCulling | Mean: {averageCullingTime} | Cull: {totalCulled}/{entitiesForCulling.Count} | Shadows: {sortedShadowIndices.Count}/{validShadowNumber} | Hulls: {hullsForCulling.Count}");
                 lastPerformanceLogTime = Timing.TotalTime;
             }
 

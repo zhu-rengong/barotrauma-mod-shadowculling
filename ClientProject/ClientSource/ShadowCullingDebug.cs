@@ -29,47 +29,70 @@ namespace Whosyouradddy.ShadowCulling
     public partial class Plugin : IAssemblyPlugin
     {
         [HarmonyPatch(
-            declaringType: typeof(GUI),
-            methodName: nameof(GUI.Draw)
+            declaringType: typeof(GameScreen),
+            methodName: nameof(GameScreen.DrawMap)
         )]
-        class GUI_Draw
+        class Submarine_DrawFront
         {
-            static void Postfix()
+            static void Postfix(SpriteBatch spriteBatch)
             {
                 if (DebugDraw)
                 {
-                    if (GameMain.spriteBatch is SpriteBatch spriteBatch
-                        && !SubEditorScreen.IsSubEditor()
-                        && Character.Controlled is Character character
-                        && Screen.Selected?.Cam is Camera cam
+                    if (!SubEditorScreen.IsSubEditor()
+                        && GameMain.GameScreen.Cam is Camera cam
                         && (GameMain.IsSingleplayer
                             ? GameMain.GameSession != null && GameMain.GameSession.IsRunning
                             : GameMain.Client?.GameStarted == true))
                     {
-                        foreach (int shadowIndex in sortedShadowIndices)
+                        spriteBatch.Begin(SpriteSortMode.Deferred, null, GUI.SamplerState, null, GameMain.ScissorTestEnable);
+
+                        if (DebugDrawHull)
                         {
-                            ref readonly Shadow shadow = ref validShadowBuffer[shadowIndex];
-                            GUI.DrawLine(
-                                spriteBatch,
-                                cam.WorldToScreen(shadow.Occluder.Start),
-                                cam.WorldToScreen(shadow.Occluder.End),
-                                Color.BlueViolet,
-                                width: 3
-                            );
-                            GUI.DrawLine(
-                                spriteBatch,
-                                cam.WorldToScreen(shadow.Ray1.Origin),
-                                cam.WorldToScreen(shadow.Ray1.Origin + shadow.Ray1.Direction * DebugDrawShadowLength),
-                                Color.BlueViolet,
-                                width: 1
-                            );
-                            GUI.DrawLine(
-                                spriteBatch,
-                                cam.WorldToScreen(shadow.Ray2.Origin),
-                                cam.WorldToScreen(shadow.Ray2.Origin + shadow.Ray2.Direction * DebugDrawShadowLength),
-                                Color.BlueViolet,
-                                width: 1
-                            );
+                            foreach (Hull hull in hullsForCulling)
+                            {
+                                RectangleF worldRect = hull.WorldRect;
+                                GUI.DrawRectangle(
+                                    spriteBatch,
+                                    new Vector2[]
+                                    {
+                                        cam.WorldToScreen(new(worldRect.X, worldRect.Y)),
+                                        cam.WorldToScreen(new(worldRect.X + worldRect.Width, worldRect.Y)),
+                                        cam.WorldToScreen(new(worldRect.X + worldRect.Width, worldRect.Y - worldRect.Height)),
+                                        cam.WorldToScreen(new(worldRect.X, worldRect.Y - worldRect.Height)),
+                                    },
+                                    isEntityCulled.TryGetValue(hull, out bool _) ? new(Color.MediumPurple, 0.5f) : Color.MediumPurple,
+                                    thickness: 4.0f
+                                );
+                            }
+                        }
+
+                        if (DebugDrawShadow && CullingEnabled)
+                        {
+                            foreach (int shadowIndex in sortedShadowIndices)
+                            {
+                                ref readonly Shadow shadow = ref validShadowBuffer[shadowIndex];
+                                GUI.DrawLine(
+                                    spriteBatch,
+                                    cam.WorldToScreen(shadow.Occluder.Start),
+                                    cam.WorldToScreen(shadow.Occluder.End),
+                                    Color.BlueViolet,
+                                    width: 3
+                                );
+                                GUI.DrawLine(
+                                    spriteBatch,
+                                    cam.WorldToScreen(shadow.Ray1.Origin),
+                                    cam.WorldToScreen(shadow.Ray1.Origin + shadow.Ray1.Direction * DebugDrawShadowLength),
+                                    Color.BlueViolet,
+                                    width: 1
+                                );
+                                GUI.DrawLine(
+                                    spriteBatch,
+                                    cam.WorldToScreen(shadow.Ray2.Origin),
+                                    cam.WorldToScreen(shadow.Ray2.Origin + shadow.Ray2.Direction * DebugDrawShadowLength),
+                                    Color.BlueViolet,
+                                    width: 1
+                                );
+                            }
                         }
 
                         foreach (var mapEntity in Submarine.VisibleEntities)
@@ -90,16 +113,15 @@ namespace Whosyouradddy.ShadowCulling
                                 Rectangle extents = new(min.ToPoint(), (max - min).ToPoint());
                                 extents.Offset(item.DrawPosition);
                                 GUI.DrawRectangle(
-                                    GameMain.spriteBatch,
+                                    spriteBatch,
                                     new Vector2[]
                                     {
-                                        cam.WorldToScreen(new Vector2(extents.Left, extents.Top)),
-                                        cam.WorldToScreen(new Vector2(extents.Right, extents.Top)),
-                                        cam.WorldToScreen(new Vector2(extents.Right, extents.Bottom)),
-                                        cam.WorldToScreen(new Vector2(extents.Left, extents.Bottom)),
+                                        cam.WorldToScreen(new(extents.Left, extents.Top)),
+                                        cam.WorldToScreen(new(extents.Right, extents.Top)),
+                                        cam.WorldToScreen(new(extents.Right, extents.Bottom)),
+                                        cam.WorldToScreen(new(extents.Left, extents.Bottom)),
                                     },
                                     item.Visible ? Color.LightBlue : new(Color.LightBlue, 0.5f),
-                                    depth: 0.04f,
                                     thickness: 2.0f
                                 );
 
@@ -109,16 +131,15 @@ namespace Whosyouradddy.ShadowCulling
                                     itemCachedExtents.Offset(item.DrawPosition);
 
                                     GUI.DrawRectangle(
-                                        GameMain.spriteBatch,
+                                        spriteBatch,
                                         new Vector2[]
                                         {
-                                            cam.WorldToScreen(new Vector2(itemCachedExtents.X, itemCachedExtents.Y)),
-                                            cam.WorldToScreen(new Vector2(itemCachedExtents.X + itemCachedExtents.Width * 2, itemCachedExtents.Y)),
-                                            cam.WorldToScreen(new Vector2(itemCachedExtents.X + itemCachedExtents.Width * 2, itemCachedExtents.Y + itemCachedExtents.Height * 2)),
-                                            cam.WorldToScreen(new Vector2(itemCachedExtents.X, itemCachedExtents.Y + itemCachedExtents.Height * 2)),
+                                            cam.WorldToScreen(new(itemCachedExtents.X, itemCachedExtents.Y)),
+                                            cam.WorldToScreen(new(itemCachedExtents.X + itemCachedExtents.Width * 2, itemCachedExtents.Y)),
+                                            cam.WorldToScreen(new(itemCachedExtents.X + itemCachedExtents.Width * 2, itemCachedExtents.Y + itemCachedExtents.Height * 2)),
+                                            cam.WorldToScreen(new(itemCachedExtents.X, itemCachedExtents.Y + itemCachedExtents.Height * 2)),
                                         },
                                         isEntityCulled.TryGetValue(item, out bool _) ? new(Color.LightYellow, 0.2f) : Color.LightYellow,
-                                        depth: 0.05f,
                                         thickness: 3.0f
                                     );
                                 }
@@ -136,21 +157,22 @@ namespace Whosyouradddy.ShadowCulling
                                              : -structure.RotationRad).BoundingAxisAlignedRectangle;
                                 worldRect.Y += worldRect.Height;
                                 GUI.DrawRectangle(
-                                    GameMain.spriteBatch,
+                                    spriteBatch,
                                     new Vector2[]
                                     {
-                                        cam.WorldToScreen(new Vector2(worldRect.X, worldRect.Y)),
-                                        cam.WorldToScreen(new Vector2(worldRect.X + worldRect.Width, worldRect.Y)),
-                                        cam.WorldToScreen(new Vector2(worldRect.X + worldRect.Width, worldRect.Y - worldRect.Height)),
-                                        cam.WorldToScreen(new Vector2(worldRect.X, worldRect.Y - worldRect.Height)),
+                                        cam.WorldToScreen(new(worldRect.X, worldRect.Y)),
+                                        cam.WorldToScreen(new(worldRect.X + worldRect.Width, worldRect.Y)),
+                                        cam.WorldToScreen(new(worldRect.X + worldRect.Width, worldRect.Y - worldRect.Height)),
+                                        cam.WorldToScreen(new(worldRect.X, worldRect.Y - worldRect.Height)),
                                     },
                                     isEntityCulled.TryGetValue(structure, out bool _) ? new(Color.Green, 0.2f) : Color.Green,
-                                    depth: 0.05f,
                                     thickness: 2.0f
                                 );
                             }
                         }
                     }
+
+                    spriteBatch.End();
                 }
             }
         }

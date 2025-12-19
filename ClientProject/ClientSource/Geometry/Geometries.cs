@@ -280,7 +280,7 @@ namespace Whosyouradddy.ShadowCulling.Geometry
                 && originToSegment.CrossProduct(end.Direction) * dir >= 0;
         }
 
-        public float ToPointDistanceSquared(Vector2 point)
+        public float ToPointDistanceSquared(in Vector2 point)
         {
             if (Length == 0.0f)
             {

@@ -20,6 +20,8 @@ namespace Whosyouradddy.ShadowCulling
         public static bool CullingEnabled = true;
 
         public static bool DebugDraw = false;
+        public static bool DebugDrawHull = true;
+        public static bool DebugDrawShadow = true;
         public static float DebugDrawShadowLength = 300.0f;
         public static bool DebugDrawItem = true;
         public static bool DebugDrawStructure = true;
@@ -45,6 +47,16 @@ namespace Whosyouradddy.ShadowCulling
             AddedCommands.Add(new DebugConsole.Command("shadowcullingdebugdraw", "", (string[] args) =>
             {
                 DebugDraw = !DebugDraw;
+            }, isCheat: false));
+
+            AddedCommands.Add(new DebugConsole.Command("shadowcullingdebugdrawhull", "", (string[] args) =>
+            {
+                DebugDrawHull = !DebugDrawHull;
+            }, isCheat: false));
+
+            AddedCommands.Add(new DebugConsole.Command("shadowcullingdebugdrawshadow", "", (string[] args) =>
+            {
+                DebugDrawShadow = !DebugDrawShadow;
             }, isCheat: false));
 
             AddedCommands.Add(new DebugConsole.Command("shadowcullingdebugdrawshadowlength", "", (string[] args) =>
