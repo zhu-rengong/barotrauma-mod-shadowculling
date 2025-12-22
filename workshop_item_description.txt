@@ -8,13 +8,13 @@ During rendering, entities (items, structures) occluded by shadows are ignored, 
 [hr][/hr]
 [h2]优化细节 | Optimize details | Оптимизировать детали[/h2]
 [list]
-[*]多核调度，同时支持6个逻辑核心
+[*]多核调度，同时支持4个逻辑核心
 [/list]
 [list]
-[*]Multi-core scheduling, supporting up to 6 logical cores simultaneously.
+[*]Multi-core scheduling, supporting up to 4 logical cores simultaneously.
 [/list]
 [list]
-[*] Многопроцессорное планирование с одновременной поддержкой до 6 логических ядер.
+[*] Многопроцессорное планирование с одновременной поддержкой до 4 логических ядер.
 [/list]
 
 [hr][/hr]

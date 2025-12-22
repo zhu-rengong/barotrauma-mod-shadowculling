@@ -43,73 +43,6 @@ namespace Whosyouradddy.ShadowCulling
             All = RightTop | LeftTop | LeftBottom | RightBottom,
         }
 
-        [HarmonyPatch(
-            declaringType: typeof(Submarine),
-            methodName: nameof(Submarine.CullEntities)
-        )]
-        class Submarine_CullEntities
-        {
-            static void Postfix()
-            {
-                if (CullingEnabled)
-                {
-                    PerformEntityCulling();
-                }
-            }
-        }
-
-        [HarmonyPatch(
-            declaringType: typeof(Item),
-            methodName: nameof(Item.Draw),
-            argumentTypes: new Type[] { typeof(SpriteBatch), typeof(bool), typeof(bool) }
-        )]
-        class Item_Draw
-        {
-            static bool Prefix(Item __instance)
-            {
-                if (isEntityCulled.TryGetValue(__instance, out bool _))
-                {
-                    return false;
-                }
-
-                return true;
-            }
-        }
-
-        [HarmonyPatch(
-            declaringType: typeof(Structure),
-            methodName: nameof(Structure.Draw),
-            argumentTypes: new Type[] { typeof(SpriteBatch), typeof(bool), typeof(bool) }
-        )]
-        class Structure_Draw
-        {
-            static bool Prefix(Item __instance)
-            {
-                if (isEntityCulled.TryGetValue(__instance, out bool _))
-                {
-                    return false;
-                }
-
-                return true;
-            }
-        }
-
-        [HarmonyPatch(
-            declaringType: typeof(Entity),
-            methodName: nameof(Entity.RemoveAll)
-         )]
-        class Entity_RemoveAll
-        {
-            static void Postfix()
-            {
-                hullsForCulling.Clear();
-                entitiesForCulling.Clear();
-                isEntityCulled.Clear();
-                entityHull.Clear();
-                LuaCsLogger.LogMessage($"Mod:ShadowCulling | Reset");
-            }
-        }
-
         private const int HULLS_PER_CULLING = 15;
         private const int ENTITIES_PER_CULLING = 65;
         private const double CULLING_INTERVAL = 0.1;
@@ -136,6 +69,14 @@ namespace Whosyouradddy.ShadowCulling
         private static ParallelOptions cullingParallelOptions = new() { MaxDegreeOfParallelism = PARALLELISM };
         private static Stopwatch cullingPerformanceTimer = new();
 
+        public static bool DisallowCulling =>
+            Screen.Selected is { IsEditor: true }
+            || !GameMain.LightManager.LosEnabled
+            || GameMain.LightManager.LosMode == LosMode.None
+            || (GameMain.IsSingleplayer
+                ? GameMain.GameSession == null || !GameMain.GameSession.IsRunning
+                : !GameMain.Client?.GameStarted ?? true);
+
         public partial void InitializeProjSpecific()
         {
             quadrants.Add(Quadrant.RightTop, new(Vector2.Zero, Vector2.UnitX, Vector2.UnitY));
@@ -146,14 +87,9 @@ namespace Whosyouradddy.ShadowCulling
 
         public static void PerformEntityCulling()
         {
-            if (SubEditorScreen.IsSubEditor()
-                || !GameMain.LightManager.LosEnabled
-                || GameMain.LightManager.LosMode == LosMode.None
+            if (DisallowCulling
                 || LightManager.ViewTarget is not Entity viewTarget
-                || Screen.Selected?.Cam is not Camera camera
-                || (GameMain.IsSingleplayer
-                    ? GameMain.GameSession == null || !GameMain.GameSession.IsRunning
-                    : !GameMain.Client?.GameStarted ?? true))
+                || Screen.Selected?.Cam is not Camera camera)
             {
                 if (cullingStateDirty)
                 {
@@ -437,7 +373,7 @@ namespace Whosyouradddy.ShadowCulling
             }
 
             entitiesForCulling.Clear();
-            entitiesForCulling.AddRange(Submarine.VisibleEntities);
+            entitiesForCulling.AddRange(Submarine.visibleEntities);
 
             if (entitiesForCulling.Count > ENTITIES_PER_CULLING)
             {
@@ -674,40 +610,6 @@ namespace Whosyouradddy.ShadowCulling
             Vector2 predictedVector = predictedPosition - referencePoint;
 
             return MathUtils.WrapAnglePi(MathF.Atan2(predictedVector.Y, predictedVector.X) - MathF.Atan2(currentVector.Y, currentVector.X));
-        }
-
-        public static bool GetLineIntersection(
-            in Vector2 line1Point1, in Vector2 line1Point2,
-            in Vector2 line2Point1, in Vector2 line2Point2,
-            bool areLinesInfinite, out Vector2 intersectionPoint)
-        {
-            intersectionPoint = Vector2.Zero;
-            Vector2 line1Direction = line1Point2 - line1Point1;
-            Vector2 line2Direction = line2Point2 - line2Point1;
-            float crossProduct = line1Direction.X * line2Direction.Y - line1Direction.Y * line2Direction.X;
-            if (crossProduct == 0f)
-            {
-                return false;
-            }
-
-            Vector2 connectionVector = line2Point1 - line1Point1;
-            float line1Parameter = (connectionVector.X * line2Direction.Y - connectionVector.Y * line2Direction.X) / crossProduct;
-            if (!areLinesInfinite)
-            {
-                if (line1Parameter < 0f || line1Parameter > 1f)
-                {
-                    return false;
-                }
-
-                float line2Parameter = (connectionVector.X * line1Direction.Y - connectionVector.Y * line1Direction.X) / crossProduct;
-                if (line2Parameter < 0f || line2Parameter > 1f)
-                {
-                    return false;
-                }
-            }
-
-            intersectionPoint = line1Point1 + line1Parameter * line1Direction;
-            return true;
         }
 
         // The drawing of light is managed by the LightManager,
