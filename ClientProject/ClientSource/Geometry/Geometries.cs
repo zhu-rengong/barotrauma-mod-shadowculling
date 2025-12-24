@@ -15,6 +15,7 @@ namespace Whosyouradddy.ShadowCulling.Geometry
         public Vector2 Center;
         public float LengthSquared;
         public float Length;
+        private int _hashCode = 0;
 
         public Segment(in Vector2 start, in Vector2 end)
         {
@@ -34,6 +35,7 @@ namespace Whosyouradddy.ShadowCulling.Geometry
             Center.Y = (Start.Y + End.Y) / 2;
             LengthSquared = StartToEnd.LengthSquared();
             Length = (float)Math.Sqrt(LengthSquared);
+            _hashCode = HashCode.Combine(Start, End);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -273,7 +275,7 @@ namespace Whosyouradddy.ShadowCulling.Geometry
 
         public override int GetHashCode()
         {
-            return HashCode.Combine(Length);
+            return _hashCode;
         }
 
         public override bool Equals(object? obj)
@@ -354,6 +356,7 @@ namespace Whosyouradddy.ShadowCulling.Geometry
         public Ray Ray1;
         public Ray Ray2;
         public float RayScanDir;
+        private int _hashCode = 0;
 
         public Shadow(Vector2 lightSource, Vector2 vertex1, Vector2 vertex2)
         {
@@ -368,6 +371,7 @@ namespace Whosyouradddy.ShadowCulling.Geometry
         public void DoCalculate()
         {
             RayScanDir = Ray1.Direction.CrossProduct(Ray2.Direction);
+            _hashCode = HashCode.Combine(LightSource, Occluder);
         }
 
         public void DoCalculate(in Vector2 lightSource, in Vector2 vertex1, in Vector2 vertex2)
@@ -398,7 +402,7 @@ namespace Whosyouradddy.ShadowCulling.Geometry
 
         public override int GetHashCode()
         {
-            return HashCode.Combine(LightSource, Occluder);
+            return _hashCode;
         }
 
         public override bool Equals(object? obj)

@@ -57,8 +57,8 @@ namespace Whosyouradddy.ShadowCulling
         private static Dictionary<int, Quadrant> shadowIndexQuadrant = new(1024);
         private static List<int> sortedShadowIndices = new(1024);
         private static LinkedList<Segment> shadowClippingOccluders = new();
-        private static HashSet<Shadow> predictableOccluderStart = new(1024);
-        private static HashSet<Shadow> predictableOccluderEnd = new(1024);
+        private static HashSet<int> predictableOccluderStart = new(1024);
+        private static HashSet<int> predictableOccluderEnd = new(1024);
         private static List<MapEntity> entitiesForCulling = new(8192);
         private static List<Hull> hullsForCulling = new(1024);
         private const int PARALLELISM = 4;
@@ -283,19 +283,18 @@ namespace Whosyouradddy.ShadowCulling
                 Vector2 predictedPosition = viewTargetPosition + viewDirection;
                 foreach (int currentShadowIndex in sortedShadowIndices)
                 {
-                    ref Shadow currentShadow = ref validShadowBuffer[currentShadowIndex];
-                    ref Segment currentOccluder = ref currentShadow.Occluder;
+                    ref Segment currentOccluder = ref validShadowBuffer[currentShadowIndex].Occluder;
                     Vector2 startToView = viewTargetPosition - currentOccluder.Start;
                     if (startToView.CrossProduct(currentOccluder.StartToEnd)
                         * startToView.CrossProduct(viewDirection) < 0.0f)
                     {
-                        predictableOccluderStart.Add(currentShadow);
+                        predictableOccluderStart.Add(currentShadowIndex);
                     }
                     Vector2 endToView = viewTargetPosition - currentOccluder.End;
                     if (endToView.CrossProduct(currentOccluder.StartToEnd)
                         * endToView.CrossProduct(viewDirection) > 0.0f)
                     {
-                        predictableOccluderEnd.Add(currentShadow);
+                        predictableOccluderEnd.Add(currentShadowIndex);
                     }
                 }
 
@@ -304,7 +303,7 @@ namespace Whosyouradddy.ShadowCulling
                     ref Shadow currentShadow = ref validShadowBuffer[currentShadowIndex];
                     ref Segment currentOccluder = ref currentShadow.Occluder;
 
-                    if (predictableOccluderStart.Contains(currentShadow))
+                    if (predictableOccluderStart.Contains(currentShadowIndex))
                     {
                         foreach (int otherShadowIndex in sortedShadowIndices)
                         {
@@ -318,8 +317,8 @@ namespace Whosyouradddy.ShadowCulling
                                     bool isOtherEndCloseEnough = (otherOccluder.End - currentOccluder.Start).LengthSquared() < 100.0f;
 
                                     if ((!isOtherStartCloseEnough && !isOtherEndCloseEnough)
-                                        || (isOtherStartCloseEnough && !predictableOccluderStart.Contains(otherShadow))
-                                        || (isOtherEndCloseEnough && !predictableOccluderEnd.Contains(otherShadow)))
+                                        || (isOtherStartCloseEnough && !predictableOccluderStart.Contains(otherShadowIndex))
+                                        || (isOtherEndCloseEnough && !predictableOccluderEnd.Contains(otherShadowIndex)))
                                     {
                                         goto SKIP_PREDICATION;
                                     }
@@ -335,7 +334,7 @@ namespace Whosyouradddy.ShadowCulling
                     SKIP_PREDICATION:;
                     }
 
-                    if (predictableOccluderEnd.Contains(currentShadow))
+                    if (predictableOccluderEnd.Contains(currentShadowIndex))
                     {
                         foreach (int otherShadowIndex in sortedShadowIndices)
                         {
@@ -349,8 +348,8 @@ namespace Whosyouradddy.ShadowCulling
                                     bool isOtherEndCloseEnough = (otherOccluder.End - currentOccluder.End).LengthSquared() < 100.0f;
 
                                     if ((!isOtherStartCloseEnough && !isOtherEndCloseEnough)
-                                        || (isOtherStartCloseEnough && !predictableOccluderStart.Contains(otherShadow))
-                                        || (isOtherEndCloseEnough && !predictableOccluderEnd.Contains(otherShadow)))
+                                        || (isOtherStartCloseEnough && !predictableOccluderStart.Contains(otherShadowIndex))
+                                        || (isOtherEndCloseEnough && !predictableOccluderEnd.Contains(otherShadowIndex)))
                                     {
                                         goto SKIP_PREDICATION;
                                     }
