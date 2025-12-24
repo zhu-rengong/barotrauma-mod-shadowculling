@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using Barotrauma;
+using Barotrauma.Items.Components;
 using FarseerPhysics;
 using HarmonyLib;
 using Microsoft.Xna.Framework;
@@ -210,6 +211,42 @@ namespace Whosyouradddy.ShadowCulling
                     s.DrawDamage(spriteBatch, damageEffect, editing);
                 }
 
+                return false;
+            }
+        }
+
+        // The drawing of light is managed by the LightManager,
+        // and its rendering is independent of culling,
+        // so we do not need to use its DrawSize to calculate the AABB.
+        [HarmonyPatch(
+             declaringType: typeof(LightComponent),
+             methodName: nameof(LightComponent.DrawSize),
+             methodType: MethodType.Getter
+        )]
+        class LightComponent_DrawSize
+        {
+            static bool Prefix(ref Vector2 __result)
+            {
+                __result.X = 0.0f;
+                __result.Y = 0.0f;
+                return false;
+            }
+        }
+
+        // In Vanilla, if you are too far from the center of a ladder,
+        // you won't be able to see it. We can fix this by modifying its draw size.
+        [HarmonyPatch(
+             declaringType: typeof(Ladder),
+             methodName: nameof(Ladder.DrawSize),
+             methodType: MethodType.Getter
+        )]
+        class Ladder_DrawSize
+        {
+            static bool Prefix(Ladder __instance, ref Vector2 __result)
+            {
+                if (__instance.backgroundSprite == null) { return true; }
+                __result.X = __instance.backgroundSprite.size.X * __instance.item.Scale;
+                __result.Y = __instance.item.Rect.Height;
                 return false;
             }
         }

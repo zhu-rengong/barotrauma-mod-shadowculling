@@ -1,9 +1,9 @@
 [h2]介绍 | Introduction | Введение[/h2]
-渲染过程中会忽略被阴影遮挡的实体（物品、结构体），显著减轻CPU和低配GPU负载，CPU性能开销约降低6%~35%，特别适合物品繁多的密室场景。
+不会渲染被阴影遮挡的实体（物品、结构体），显著减轻CPU和低配GPU负载，在物品繁多的密室场景以及远视野下效果更加明显。
 
-During rendering, entities (items, structures) occluded by shadows are ignored, significantly reducing the workload on the CPU and low‑end GPUs. CPU performance overhead is lowered by approximately 6%–35%, making it especially suitable for dense scenes with numerous objects, such as cluttered rooms.
+Does not render entities (items, structures) that are blocked by shadows, significantly reducing the load on the CPU and low-end GPUs. The effect is more noticeable in densely packed dungeon-like environments​ and with long view distances.
 
-В процессе рендеринга игнорируются объекты (предметы, структуры), перекрытые тенями, что значительно снижает нагрузку на центральный процессор и слабые графические процессоры. Затраты производительности ЦП сокращаются примерно на 6–35%, что особенно полезно для насыщенных сцен с большим количеством объектов, например, захламлённых помещений.
+Не отображает объекты (предметы, структуры), скрытые в тени, что значительно снижает нагрузку на процессор и слабые видеокарты. Эффект особенно заметен в переполненных объектах подземельях/помещениях​ и при отрисовке дальних дистанций.
 
 [hr][/hr]
 [h2]优化细节 | Optimize details | Оптимизировать детали[/h2]

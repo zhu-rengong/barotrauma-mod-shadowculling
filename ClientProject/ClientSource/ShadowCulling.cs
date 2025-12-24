@@ -45,7 +45,7 @@ namespace Whosyouradddy.ShadowCulling
 
         private const int HULLS_PER_CULLING = 15;
         private const int ENTITIES_PER_CULLING = 65;
-        private const double CULLING_INTERVAL = 0.1;
+        private const double CULLING_INTERVAL = 0.05;
         private const float SHADOW_PREDICTION_TOLERANCE_MULTIPLIER = 1000.0f;
         private static double lastCullingUpdateTime;
         private static double lastPerformanceLogTime;
@@ -57,6 +57,8 @@ namespace Whosyouradddy.ShadowCulling
         private static Dictionary<int, Quadrant> shadowIndexQuadrant = new(1024);
         private static List<int> sortedShadowIndices = new(1024);
         private static LinkedList<Segment> shadowClippingOccluders = new();
+        private static HashSet<Shadow> predictableOccluderStart = new(1024);
+        private static HashSet<Shadow> predictableOccluderEnd = new(1024);
         private static List<MapEntity> entitiesForCulling = new(8192);
         private static List<Hull> hullsForCulling = new(1024);
         private const int PARALLELISM = 4;
@@ -204,11 +206,11 @@ namespace Whosyouradddy.ShadowCulling
                 }
             }
 
-            // Exclude the convex hulls whose sample points are all in shadow
-            // When the number of convex hulls is sufficiently large,
-            // sorting them based on their distance to the view target
-            // and using the nearer hulls to prioritize determining whether farther hulls are in shadow
-            // can significantly improve performance.
+            // Exclude convex hulls that are in shadow
+            // When there are enough convex hulls,
+            // sort them by their distance to the view target,
+            // and use nearer hulls to prioritize determining whether farther ones are in shadow.
+            // This can significantly improve the hit rate of predicate.
             shadowIndexLinkedList = new(shadowIndexLinkedList.OrderBy(
                 shadowIndex => (viewTargetPosition - validShadowBuffer[shadowIndex].Occluder.Center).LengthSquared()
             ));
@@ -275,64 +277,93 @@ namespace Whosyouradddy.ShadowCulling
             // Calculate the shadow tolerance based on the view's predicted position to avoid "face-close loading".
             if (viewDirection.LengthSquared() > 0.01f)
             {
+                predictableOccluderStart.Clear();
+                predictableOccluderEnd.Clear();
+
                 Vector2 predictedPosition = viewTargetPosition + viewDirection;
                 foreach (int currentShadowIndex in sortedShadowIndices)
                 {
                     ref Shadow currentShadow = ref validShadowBuffer[currentShadowIndex];
                     ref Segment currentOccluder = ref currentShadow.Occluder;
-
                     Vector2 startToView = viewTargetPosition - currentOccluder.Start;
-                    if (startToView.CrossProduct(currentOccluder.StartToEnd) * startToView.CrossProduct(viewDirection) < 0)
+                    if (startToView.CrossProduct(currentOccluder.StartToEnd)
+                        * startToView.CrossProduct(viewDirection) < 0.0f)
                     {
-                        bool shouldPredict = true;
+                        predictableOccluderStart.Add(currentShadow);
+                    }
+                    Vector2 endToView = viewTargetPosition - currentOccluder.End;
+                    if (endToView.CrossProduct(currentOccluder.StartToEnd)
+                        * endToView.CrossProduct(viewDirection) > 0.0f)
+                    {
+                        predictableOccluderEnd.Add(currentShadow);
+                    }
+                }
 
+                foreach (int currentShadowIndex in sortedShadowIndices)
+                {
+                    ref Shadow currentShadow = ref validShadowBuffer[currentShadowIndex];
+                    ref Segment currentOccluder = ref currentShadow.Occluder;
+
+                    if (predictableOccluderStart.Contains(currentShadow))
+                    {
                         foreach (int otherShadowIndex in sortedShadowIndices)
                         {
                             if (currentShadowIndex != otherShadowIndex)
                             {
-                                if (validShadowBuffer[otherShadowIndex].Occluder.ToPointDistanceSquared(currentOccluder.Start) < 100.0f)
+                                ref readonly Shadow otherShadow = ref validShadowBuffer[otherShadowIndex];
+                                ref readonly Segment otherOccluder = ref otherShadow.Occluder;
+                                if (otherOccluder.ToPointDistanceSquared(currentOccluder.Start) < 100.0f)
                                 {
-                                    shouldPredict = false;
-                                    break;
+                                    bool isOtherStartCloseEnough = (otherOccluder.Start - currentOccluder.Start).LengthSquared() < 100.0f;
+                                    bool isOtherEndCloseEnough = (otherOccluder.End - currentOccluder.Start).LengthSquared() < 100.0f;
+
+                                    if ((!isOtherStartCloseEnough && !isOtherEndCloseEnough)
+                                        || (isOtherStartCloseEnough && !predictableOccluderStart.Contains(otherShadow))
+                                        || (isOtherEndCloseEnough && !predictableOccluderEnd.Contains(otherShadow)))
+                                    {
+                                        goto SKIP_PREDICATION;
+                                    }
                                 }
                             }
                         }
 
-                        if (shouldPredict)
-                        {
-                            float predictionOffset = MathF.Min(
-                                MathF.Abs(PredictAngleChange(currentOccluder.Start, viewTargetPosition, predictedPosition)) * SHADOW_PREDICTION_TOLERANCE_MULTIPLIER,
-                                currentOccluder.Length - 1.0f);
-                            currentOccluder.Start += Vector2.Normalize(currentOccluder.StartToEnd) * predictionOffset;
-                            currentShadow.DoCalculate(viewTargetPosition, currentOccluder.Start, currentOccluder.End);
-                        }
+                        float predictionOffset = MathF.Min(
+                            MathF.Abs((viewTargetPosition - currentOccluder.Start).VectorAngle(predictedPosition - currentOccluder.Start)) * SHADOW_PREDICTION_TOLERANCE_MULTIPLIER,
+                            currentOccluder.Length - 1.0f);
+                        currentOccluder.Start += Vector2.Normalize(currentOccluder.StartToEnd) * predictionOffset;
+                        currentShadow.DoCalculate(viewTargetPosition, currentOccluder.Start, currentOccluder.End);
+                    SKIP_PREDICATION:;
                     }
 
-                    Vector2 endToView = viewTargetPosition - currentOccluder.End;
-                    if (endToView.CrossProduct(currentOccluder.StartToEnd) * endToView.CrossProduct(viewDirection) > 0)
+                    if (predictableOccluderEnd.Contains(currentShadow))
                     {
-                        bool shouldPredict = true;
-
                         foreach (int otherShadowIndex in sortedShadowIndices)
                         {
                             if (currentShadowIndex != otherShadowIndex)
                             {
-                                if (validShadowBuffer[otherShadowIndex].Occluder.ToPointDistanceSquared(currentOccluder.End) < 100.0f)
+                                ref readonly Shadow otherShadow = ref validShadowBuffer[otherShadowIndex];
+                                ref readonly Segment otherOccluder = ref otherShadow.Occluder;
+                                if (otherOccluder.ToPointDistanceSquared(currentOccluder.End) < 100.0f)
                                 {
-                                    shouldPredict = false;
-                                    break;
+                                    bool isOtherStartCloseEnough = (otherOccluder.Start - currentOccluder.End).LengthSquared() < 100.0f;
+                                    bool isOtherEndCloseEnough = (otherOccluder.End - currentOccluder.End).LengthSquared() < 100.0f;
+
+                                    if ((!isOtherStartCloseEnough && !isOtherEndCloseEnough)
+                                        || (isOtherStartCloseEnough && !predictableOccluderStart.Contains(otherShadow))
+                                        || (isOtherEndCloseEnough && !predictableOccluderEnd.Contains(otherShadow)))
+                                    {
+                                        goto SKIP_PREDICATION;
+                                    }
                                 }
                             }
                         }
 
-                        if (shouldPredict)
-                        {
-                            float predictionOffset = MathF.Min(
-                                MathF.Abs(PredictAngleChange(currentOccluder.End, viewTargetPosition, predictedPosition)) * SHADOW_PREDICTION_TOLERANCE_MULTIPLIER,
-                                currentOccluder.Length - 1.0f);
-                            currentOccluder.End += Vector2.Normalize(-currentOccluder.StartToEnd) * predictionOffset;
-                            currentShadow.DoCalculate(viewTargetPosition, currentOccluder.Start, currentOccluder.End);
-                        }
+                        float predictionOffset = MathF.Min(
+                            MathF.Abs((viewTargetPosition - currentOccluder.End).VectorAngle(predictedPosition - currentOccluder.End)) * SHADOW_PREDICTION_TOLERANCE_MULTIPLIER,
+                            currentOccluder.Length - 1.0f);
+                        currentOccluder.End += Vector2.Normalize(-currentOccluder.StartToEnd) * predictionOffset;
+                        currentShadow.DoCalculate(viewTargetPosition, currentOccluder.Start, currentOccluder.End);
+                    SKIP_PREDICATION:;
                     }
                 }
             }
@@ -430,7 +461,7 @@ namespace Whosyouradddy.ShadowCulling
                                 // ClientSource/Items/Item.cs | cachedVisibleExtents = extents = new Rectangle(min.ToPoint(), max.ToPoint());
                                 // The correct one should be:
                                 // cachedVisibleExtents = extents = new Rectangle(min.ToPoint(), (max - min).ToPoint());
-                                // I have to calculate the sample points based on original cached extents in real-time here:
+                                // I have to recalculate the cached extents in real-time here:
                                 entityAABB.Width *= 2;
                                 entityAABB.Height *= 2;
                                 entityAABB.Y += entityAABB.Height;
@@ -599,53 +630,6 @@ namespace Whosyouradddy.ShadowCulling
             lastCullingUpdateTime = Timing.TotalTime;
 
             cullingStateDirty = true;
-        }
-
-        public static float PredictAngleChange(
-            in Vector2 referencePoint,
-            in Vector2 currentPosition,
-            in Vector2 predictedPosition)
-        {
-            Vector2 currentVector = currentPosition - referencePoint;
-            Vector2 predictedVector = predictedPosition - referencePoint;
-
-            return MathUtils.WrapAnglePi(MathF.Atan2(predictedVector.Y, predictedVector.X) - MathF.Atan2(currentVector.Y, currentVector.X));
-        }
-
-        // The drawing of light is managed by the LightManager,
-        // and its rendering is independent of culling,
-        // so we do not need to use its DrawSize to calculate the AABB.
-        [HarmonyPatch(
-             declaringType: typeof(LightComponent),
-             methodName: nameof(LightComponent.DrawSize),
-             methodType: MethodType.Getter
-        )]
-        class LightComponent_DrawSize
-        {
-            static bool Prefix(ref Vector2 __result)
-            {
-                __result.X = 0.0f;
-                __result.Y = 0.0f;
-                return false;
-            }
-        }
-
-        // In Vanilla, if you are too far from the center of a ladder,
-        // you won't be able to see it. We can fix this by modifying its draw size.
-        [HarmonyPatch(
-             declaringType: typeof(Ladder),
-             methodName: nameof(Ladder.DrawSize),
-             methodType: MethodType.Getter
-        )]
-        class Ladder_DrawSize
-        {
-            static bool Prefix(Ladder __instance, ref Vector2 __result)
-            {
-                if (__instance.backgroundSprite == null) { return true; }
-                __result.X = __instance.backgroundSprite.size.X * __instance.item.Scale;
-                __result.Y = __instance.item.Rect.Height;
-                return false;
-            }
         }
     }
 }

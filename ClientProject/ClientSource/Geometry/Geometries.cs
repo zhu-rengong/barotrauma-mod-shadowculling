@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using Barotrauma;
 using Microsoft.Xna.Framework;
 using ConvexHull = Barotrauma.Lights.ConvexHull;
 
@@ -62,6 +63,7 @@ namespace Whosyouradddy.ShadowCulling.Geometry
             return true;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public bool IntersectWith(in Ray ray)
         {
             Vector2 intersection = default;
@@ -87,6 +89,7 @@ namespace Whosyouradddy.ShadowCulling.Geometry
             return true;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public bool IntersectWith(in Segment other)
         {
             Vector2 intersection = default;
@@ -162,41 +165,6 @@ namespace Whosyouradddy.ShadowCulling.Geometry
             return count;
         }
 
-        public int ClipFrom(in Shadow shadow, out Segment[] clips)
-        {
-            Span<Segment> span = stackalloc Segment[3];
-            int count = ClipFrom(shadow, span);
-            clips = span.Slice(0, count).ToArray();
-            return count;
-        }
-
-        public int ClipFrom(IEnumerable<Shadow> shadows, out LinkedList<Segment> clips)
-        {
-            clips = new();
-            clips.AddLast(this);
-
-            foreach (var shadow in shadows)
-            {
-                LinkedListNode<Segment>? node = clips.First;
-                if (node == null) { break; }
-                do
-                {
-                    var nextNode = node.Next;
-                    ref readonly Segment _segment = ref node.ValueRef;
-                    int length = _segment.ClipFrom(shadow, out Segment[] _segments);
-                    for (int i = 0; i < length; i++)
-                    {
-                        clips.AddBefore(node, _segments[i]);
-
-                    }
-                    clips.Remove(node);
-                    node = nextNode;
-                } while (node != null);
-            }
-
-            return clips.Count;
-        }
-
         public int ClipFrom(in RayRange rayRange, Span<Segment> clips)
         {
             float dir = rayRange.RayScanDir;
@@ -247,14 +215,6 @@ namespace Whosyouradddy.ShadowCulling.Geometry
                 }
             }
 
-            return count;
-        }
-
-        public int ClipFrom(in RayRange rayRange, out Segment[] clips)
-        {
-            Span<Segment> tempSpan = stackalloc Segment[2];
-            int count = ClipFrom(rayRange, tempSpan);
-            clips = tempSpan.Slice(0, count).ToArray();
             return count;
         }
 
@@ -464,6 +424,11 @@ namespace Whosyouradddy.ShadowCulling.Geometry
         public static float CrossProduct(in this Vector2 a, in Vector2 b)
         {
             return a.X * b.Y - a.Y * b.X;
+        }
+
+        public static float VectorAngle(in this Vector2 p1, in Vector2 p2)
+        {
+            return MathUtils.WrapAnglePi(MathF.Atan2(p1.Y, p1.X) - MathF.Atan2(p2.Y, p2.X));
         }
     }
 }
