@@ -470,7 +470,7 @@ namespace Whosyouradddy.ShadowCulling
                                     RectangleF hullAABB = itemHull.WorldRect;
                                     if (entityAABB.X > hullAABB.X && entityAABB.Y < hullAABB.Y
                                         && entityAABB.X + entityAABB.Width < hullAABB.X + hullAABB.Width
-                                        && entityAABB.Y - entityAABB.Height > hullAABB.X - hullAABB.Height)
+                                        && entityAABB.Y - entityAABB.Height > hullAABB.Y - hullAABB.Height)
                                     {
                                         goto CULL;
                                     }
@@ -495,7 +495,7 @@ namespace Whosyouradddy.ShadowCulling
                                     RectangleF hullAABB = structureHull.WorldRect;
                                     if (entityAABB.X > hullAABB.X && entityAABB.Y < hullAABB.Y
                                         && entityAABB.X + entityAABB.Width < hullAABB.X + hullAABB.Width
-                                        && entityAABB.Y - entityAABB.Height > hullAABB.X - hullAABB.Height)
+                                        && entityAABB.Y - entityAABB.Height > hullAABB.Y - hullAABB.Height)
                                     {
                                         goto CULL;
                                     }
