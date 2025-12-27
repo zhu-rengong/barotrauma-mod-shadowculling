@@ -434,5 +434,28 @@ namespace Whosyouradddy.ShadowCulling.Geometry
         {
             return MathUtils.WrapAnglePi(MathF.Atan2(p1.Y, p1.X) - MathF.Atan2(p2.Y, p2.X));
         }
+
+        public static void AddDrawPointF(ref this RectangleF rect, in Vector2 v2)
+        {
+            if (v2.X < rect.X)
+            {
+                rect.Width += rect.X - v2.X;
+                rect.X = v2.X;
+            }
+            else if (v2.X > rect.Right)
+            {
+                rect.Width += v2.X - rect.Right;
+            }
+
+            if (v2.Y > rect.Y)
+            {
+                rect.Height += v2.Y - rect.Y;
+                rect.Y = v2.Y;
+            }
+            else if (v2.Y < rect.Y - rect.Height)
+            {
+                rect.Height += rect.Y - rect.Height - v2.Y;
+            }
+        }
     }
 }

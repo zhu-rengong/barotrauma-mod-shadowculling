@@ -101,23 +101,23 @@ namespace Whosyouradddy.ShadowCulling
                         }
 
                         // Draw a simple AABB of the item
-                        RectangleF boundingBox = item.GetTransformedQuad().BoundingAxisAlignedRectangle;
-                        Vector2 min = new Vector2(-boundingBox.Width / 2, -boundingBox.Height / 2);
-                        Vector2 max = -min;
-                        Rectangle extents = new(min.ToPoint(), (max - min).ToPoint());
-                        extents.Offset(item.DrawPosition);
-                        GUI.DrawRectangle(
-                            spriteBatch,
-                            new Vector2[]
-                            {
-                                cam.WorldToScreen(new(extents.Left, extents.Top)),
-                                cam.WorldToScreen(new(extents.Right, extents.Top)),
-                                cam.WorldToScreen(new(extents.Right, extents.Bottom)),
-                                cam.WorldToScreen(new(extents.Left, extents.Bottom)),
-                            },
-                            item.Visible ? Color.LightBlue : new(Color.LightBlue, 0.5f),
-                            thickness: 2.0f
-                        );
+                        // RectangleF boundingBox = item.GetTransformedQuad().BoundingAxisAlignedRectangle;
+                        // Vector2 min = new Vector2(-boundingBox.Width / 2, -boundingBox.Height / 2);
+                        // Vector2 max = -min;
+                        // Rectangle extents = new(min.ToPoint(), (max - min).ToPoint());
+                        // extents.Offset(item.DrawPosition);
+                        // GUI.DrawRectangle(
+                        //     spriteBatch,
+                        //     new Vector2[]
+                        //     {
+                        //         cam.WorldToScreen(new(extents.Left, extents.Top)),
+                        //         cam.WorldToScreen(new(extents.Right, extents.Top)),
+                        //         cam.WorldToScreen(new(extents.Right, extents.Bottom)),
+                        //         cam.WorldToScreen(new(extents.Left, extents.Bottom)),
+                        //     },
+                        //     isEntityCulled.TryGetValue(item, out bool _) ? new(Color.LightBlue, 0.05f) : new(Color.LightBlue, 0.5f),
+                        //     thickness: 2.0f
+                        // );
 
                         // Draw AABB of cached extents
                         if (item.cachedVisibleExtents is Rectangle itemCachedExtents)
@@ -133,8 +133,8 @@ namespace Whosyouradddy.ShadowCulling
                                     cam.WorldToScreen(new(itemCachedExtents.X + itemCachedExtents.Width * 2, itemCachedExtents.Y + itemCachedExtents.Height * 2)),
                                     cam.WorldToScreen(new(itemCachedExtents.X, itemCachedExtents.Y + itemCachedExtents.Height * 2)),
                                 },
-                                isEntityCulled.TryGetValue(item, out bool _) ? new(Color.LightYellow, 0.2f) : Color.LightYellow,
-                                thickness: 3.0f
+                                isEntityCulled.TryGetValue(item, out bool _) ? new(Color.AntiqueWhite, 0.1f) : new(Color.AntiqueWhite, 0.4f),
+                                thickness: 2.0f
                             );
                         }
                     }
@@ -159,12 +159,35 @@ namespace Whosyouradddy.ShadowCulling
                                 cam.WorldToScreen(new(worldRect.X + worldRect.Width, worldRect.Y - worldRect.Height)),
                                 cam.WorldToScreen(new(worldRect.X, worldRect.Y - worldRect.Height)),
                             },
-                            isEntityCulled.TryGetValue(structure, out bool _) ? new(Color.Green, 0.2f) : Color.Green,
+                            isEntityCulled.TryGetValue(structure, out bool _) ? new(Color.Green, 0.1f) : new(Color.Green, 0.4f),
                             thickness: 2.0f
                         );
                     }
                 }
 
+                if (DebugDrawCharacter)
+                {
+                    foreach (var character in Character.CharacterList)
+                    {
+                        if (character.IsVisible && character != LightManager.ViewTarget)
+                        {
+                            RectangleF entityAABB = AABB.Calculate(character);
+                            // entityAABB.Offset(character.DrawPosition);
+                            GUI.DrawRectangle(
+                                spriteBatch,
+                                new Vector2[]
+                                {
+                                    cam.WorldToScreen(new(entityAABB.X, entityAABB.Y)),
+                                    cam.WorldToScreen(new(entityAABB.X + entityAABB.Width, entityAABB.Y)),
+                                    cam.WorldToScreen(new(entityAABB.X + entityAABB.Width, entityAABB.Y - entityAABB.Height)),
+                                    cam.WorldToScreen(new(entityAABB.X, entityAABB.Y - entityAABB.Height)),
+                                },
+                                isEntityCulled.TryGetValue(character, out bool _) ? new(Color.Red, 0.2f) : Color.Red,
+                                thickness: 3.0f
+                            );
+                        }
+                    }
+                }
                 spriteBatch.End();
             }
         }

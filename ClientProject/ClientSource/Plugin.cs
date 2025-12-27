@@ -81,6 +81,7 @@ namespace Whosyouradddy.ShadowCulling
             {
                 hullsForCulling.Clear();
                 entitiesForCulling.Clear();
+                charactersForCulling.Clear();
                 isEntityCulled.Clear();
                 entityHull.Clear();
                 LuaCsLogger.LogMessage($"Mod:ShadowCulling | Reset");
@@ -215,13 +216,31 @@ namespace Whosyouradddy.ShadowCulling
             }
         }
 
+        [HarmonyPatch(
+            declaringType: typeof(Character),
+            methodName: nameof(Character.Draw)
+        )]
+        class Character_Draw
+        {
+            static bool Prefix(Character __instance)
+            {
+                if (isEntityCulled.TryGetValue(__instance, out bool _))
+                {
+                    return false;
+                }
+
+                return true;
+            }
+        }
+
+
         // The drawing of light is managed by the LightManager,
         // and its rendering is independent of culling,
         // so we do not need to use its DrawSize to calculate the AABB.
         [HarmonyPatch(
-             declaringType: typeof(LightComponent),
-             methodName: nameof(LightComponent.DrawSize),
-             methodType: MethodType.Getter
+            declaringType: typeof(LightComponent),
+            methodName: nameof(LightComponent.DrawSize),
+            methodType: MethodType.Getter
         )]
         class LightComponent_DrawSize
         {
@@ -236,9 +255,9 @@ namespace Whosyouradddy.ShadowCulling
         // In Vanilla, if you are too far from the center of a ladder,
         // you won't be able to see it. We can fix this by modifying its draw size.
         [HarmonyPatch(
-             declaringType: typeof(Ladder),
-             methodName: nameof(Ladder.DrawSize),
-             methodType: MethodType.Getter
+            declaringType: typeof(Ladder),
+            methodName: nameof(Ladder.DrawSize),
+            methodType: MethodType.Getter
         )]
         class Ladder_DrawSize
         {

@@ -61,10 +61,11 @@ namespace Whosyouradddy.ShadowCulling
         private static HashSet<int> predictableOccluderEnd = new(1024);
         private static List<MapEntity> entitiesForCulling = new(8192);
         private static List<Hull> hullsForCulling = new(1024);
+        private static List<Character> charactersForCulling = new(256);
         private const int PARALLELISM = 4;
         private const int CONCURRENCY_LEVEL = PARALLELISM * 3;
-        private static ConcurrentDictionary<MapEntity, Hull?> entityHull = new(CONCURRENCY_LEVEL, 8192);
-        private static ConcurrentDictionary<MapEntity, bool> isEntityCulled = new(CONCURRENCY_LEVEL, 8192);
+        private static ConcurrentDictionary<Entity, Hull?> entityHull = new(CONCURRENCY_LEVEL, 8192);
+        private static ConcurrentDictionary<Entity, bool> isEntityCulled = new(CONCURRENCY_LEVEL, 8192);
         private static Vector2? previousViewRelativePos;
         private static ObjectPool<LinkedList<Segment>> poolLinkedListSegment = new(() => new());
 
@@ -97,6 +98,7 @@ namespace Whosyouradddy.ShadowCulling
                 {
                     hullsForCulling.Clear();
                     entitiesForCulling.Clear();
+                    charactersForCulling.Clear();
                     isEntityCulled.Clear();
                     entityHull.Clear();
                     cullingStateDirty = false;
@@ -107,8 +109,8 @@ namespace Whosyouradddy.ShadowCulling
 
             if (lastCullingUpdateTime > Timing.TotalTime - CULLING_INTERVAL) { return; }
 
-            Vector2 viewTargetPosition = viewTarget is Character character &&
-                character.AnimController?.GetLimb(LimbType.Head) is Limb head &&
+            Vector2 viewTargetPosition = viewTarget is Character viewTargetCharacter &&
+                viewTargetCharacter.AnimController?.GetLimb(LimbType.Head) is Limb head &&
                 !head.IsSevered && !head.Removed
                     ? head.body.DrawPosition
                     : viewTarget.DrawPosition;
@@ -393,13 +395,13 @@ namespace Whosyouradddy.ShadowCulling
                         Cull(hullsForCulling,
                             fromInclusive: startIndex,
                             toExclusive: Math.Min(startIndex + HULLS_PER_CULLING, hullsForCulling.Count),
-                            hullRenderCulling: true);
+                            hullRenderCulling: true, characterRenderCulling: false);
                     }
                 );
             }
             else
             {
-                Cull(hullsForCulling, fromInclusive: 0, toExclusive: hullsForCulling.Count, hullRenderCulling: true);
+                Cull(hullsForCulling, fromInclusive: 0, toExclusive: hullsForCulling.Count, hullRenderCulling: true, characterRenderCulling: false);
             }
 
             entitiesForCulling.Clear();
@@ -417,16 +419,20 @@ namespace Whosyouradddy.ShadowCulling
                         Cull(entitiesForCulling,
                             fromInclusive: startIndex,
                             toExclusive: Math.Min(startIndex + ENTITIES_PER_CULLING, entitiesForCulling.Count),
-                            hullRenderCulling: false);
+                            hullRenderCulling: false, characterRenderCulling: false);
                     }
                 );
             }
             else
             {
-                Cull(entitiesForCulling, fromInclusive: 0, toExclusive: entitiesForCulling.Count, hullRenderCulling: false);
+                Cull(entitiesForCulling, fromInclusive: 0, toExclusive: entitiesForCulling.Count, hullRenderCulling: false, characterRenderCulling: false);
             }
 
-            void Cull<T>(List<T> entities, int fromInclusive, int toExclusive, bool hullRenderCulling) where T : MapEntity
+            charactersForCulling.Clear();
+            charactersForCulling.AddRange(Character.CharacterList.Where(c => c.IsVisible));
+            Cull(charactersForCulling, fromInclusive: 0, toExclusive: charactersForCulling.Count, hullRenderCulling: false, characterRenderCulling: true);
+
+            void Cull<T>(List<T> entities, int fromInclusive, int toExclusive, bool hullRenderCulling, bool characterRenderCulling) where T : Entity
             {
                 Span<Segment> entityEdges = stackalloc Segment[8];
                 Span<Segment> edgeClipBuffer = stackalloc Segment[3];
@@ -441,7 +447,18 @@ namespace Whosyouradddy.ShadowCulling
 
                     if (hullRenderCulling)
                     {
-                        entityAABB = entity.WorldRect;
+                        entityAABB = (entity as MapEntity)!.WorldRect;
+                    }
+                    else if (characterRenderCulling)
+                    {
+                        if (entity is Character character && character != viewTarget)
+                        {
+                            entityAABB = AABB.Calculate(character);
+                        }
+                        else
+                        {
+                            continue;
+                        }
                     }
                     else
                     {
