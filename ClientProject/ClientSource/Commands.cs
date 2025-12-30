@@ -33,7 +33,8 @@ namespace Whosyouradddy.ShadowCulling
         {
             AddedCommands.Add(new DebugConsole.Command("shadowcullingdebugonce", "", (string[] args) =>
             {
-                PerformEntityCulling();
+                TryClearAll();
+                PerformEntityCulling(debug: true);
             }, isCheat: false));
 
             AddedCommands.Add(new DebugConsole.Command("shadowcullingtoggle", "", (string[] args) =>
@@ -41,7 +42,7 @@ namespace Whosyouradddy.ShadowCulling
                 CullingEnabled = !CullingEnabled;
                 if (!CullingEnabled)
                 {
-                    isEntityCulled.Clear();
+                    TryClearAll();
                 }
             }, isCheat: false));
 

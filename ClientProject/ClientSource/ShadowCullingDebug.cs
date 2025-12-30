@@ -60,7 +60,7 @@ namespace Whosyouradddy.ShadowCulling
                     }
                 }
 
-                if (DebugDrawShadow && CullingEnabled)
+                if (DebugDrawShadow)
                 {
                     foreach (int shadowIndex in sortedShadowIndices)
                     {
@@ -89,75 +89,48 @@ namespace Whosyouradddy.ShadowCulling
                     }
                 }
 
-                foreach (var mapEntity in Submarine.VisibleEntities)
+                foreach (var entity in Submarine.VisibleEntities)
                 {
-                    if (mapEntity.IsHidden) { continue; }
+                    if (entity.IsHidden) { continue; }
 
-                    if (DebugDrawItem && mapEntity is Item item)
+                    if (DebugDrawItem && entity is Item item)
                     {
-                        if (item.isWire)
+                        if (!item.cachedVisibleExtents.HasValue || !item.Visible || item.isWire)
                         {
                             continue;
                         }
 
-                        // Draw a simple AABB of the item
-                        // RectangleF boundingBox = item.GetTransformedQuad().BoundingAxisAlignedRectangle;
-                        // Vector2 min = new Vector2(-boundingBox.Width / 2, -boundingBox.Height / 2);
-                        // Vector2 max = -min;
-                        // Rectangle extents = new(min.ToPoint(), (max - min).ToPoint());
-                        // extents.Offset(item.DrawPosition);
-                        // GUI.DrawRectangle(
-                        //     spriteBatch,
-                        //     new Vector2[]
-                        //     {
-                        //         cam.WorldToScreen(new(extents.Left, extents.Top)),
-                        //         cam.WorldToScreen(new(extents.Right, extents.Top)),
-                        //         cam.WorldToScreen(new(extents.Right, extents.Bottom)),
-                        //         cam.WorldToScreen(new(extents.Left, extents.Bottom)),
-                        //     },
-                        //     isEntityCulled.TryGetValue(item, out bool _) ? new(Color.LightBlue, 0.05f) : new(Color.LightBlue, 0.5f),
-                        //     thickness: 2.0f
-                        // );
+                        RectangleF entityAABB = item.cachedVisibleExtents.Value;
+                        entityAABB.Width -= entityAABB.X;
+                        entityAABB.Height -= entityAABB.Y;
+                        entityAABB.Y += entityAABB.Height;
+                        entityAABB.Offset(entity.DrawPosition);
 
-                        // Draw AABB of cached extents
-                        if (item.cachedVisibleExtents is Rectangle itemCachedExtents)
-                        {
-                            itemCachedExtents.Offset(item.DrawPosition);
-
-                            GUI.DrawRectangle(
-                                spriteBatch,
-                                new Vector2[]
-                                {
-                                    cam.WorldToScreen(new(itemCachedExtents.X, itemCachedExtents.Y)),
-                                    cam.WorldToScreen(new(itemCachedExtents.X + itemCachedExtents.Width * 2, itemCachedExtents.Y)),
-                                    cam.WorldToScreen(new(itemCachedExtents.X + itemCachedExtents.Width * 2, itemCachedExtents.Y + itemCachedExtents.Height * 2)),
-                                    cam.WorldToScreen(new(itemCachedExtents.X, itemCachedExtents.Y + itemCachedExtents.Height * 2)),
-                                },
-                                isEntityCulled.TryGetValue(item, out bool _) ? new(Color.AntiqueWhite, 0.1f) : new(Color.AntiqueWhite, 0.4f),
-                                thickness: 2.0f
-                            );
-                        }
-                    }
-                    else if (DebugDrawStructure && mapEntity is Structure structure)
-                    {
-                        if (structure.Prefab.DecorativeSprites.Length > 0)
-                        {
-                            continue;
-                        }
-
-                        RectangleF worldRect = Quad2D.FromSubmarineRectangle(structure.WorldRect).Rotated(
-                                 structure.FlippedX != structure.FlippedY
-                                     ? structure.RotationRad
-                                     : -structure.RotationRad).BoundingAxisAlignedRectangle;
-                        worldRect.Y += worldRect.Height;
                         GUI.DrawRectangle(
                             spriteBatch,
                             new Vector2[]
                             {
-                                cam.WorldToScreen(new(worldRect.X, worldRect.Y)),
-                                cam.WorldToScreen(new(worldRect.X + worldRect.Width, worldRect.Y)),
-                                cam.WorldToScreen(new(worldRect.X + worldRect.Width, worldRect.Y - worldRect.Height)),
-                                cam.WorldToScreen(new(worldRect.X, worldRect.Y - worldRect.Height)),
+                                cam.WorldToScreen(new(entityAABB.X, entityAABB.Y)),
+                                cam.WorldToScreen(new(entityAABB.X + entityAABB.Width, entityAABB.Y)),
+                                cam.WorldToScreen(new(entityAABB.X + entityAABB.Width, entityAABB.Y - entityAABB.Height)),
+                                cam.WorldToScreen(new(entityAABB.X, entityAABB.Y - entityAABB.Height)),
+                            },
+                            isEntityCulled.TryGetValue(item, out bool _) ? new(Color.AntiqueWhite, 0.1f) : new(Color.AntiqueWhite, 0.4f),
+                            thickness: 2.0f
+                        );
+                    }
+                    else if (DebugDrawStructure && entity is Structure structure)
+                    {
+                        RectangleF entityAABB = AABB.CalculateFixed(structure);
+                        entityAABB.Offset(entity.DrawPosition);
+                        GUI.DrawRectangle(
+                            spriteBatch,
+                            new Vector2[]
+                            {
+                                cam.WorldToScreen(new(entityAABB.X, entityAABB.Y)),
+                                cam.WorldToScreen(new(entityAABB.X + entityAABB.Width, entityAABB.Y)),
+                                cam.WorldToScreen(new(entityAABB.X + entityAABB.Width, entityAABB.Y - entityAABB.Height)),
+                                cam.WorldToScreen(new(entityAABB.X, entityAABB.Y - entityAABB.Height)),
                             },
                             isEntityCulled.TryGetValue(structure, out bool _) ? new(Color.Green, 0.1f) : new(Color.Green, 0.4f),
                             thickness: 2.0f
@@ -171,8 +144,7 @@ namespace Whosyouradddy.ShadowCulling
                     {
                         if (character.IsVisible && character != LightManager.ViewTarget)
                         {
-                            RectangleF entityAABB = AABB.Calculate(character);
-                            // entityAABB.Offset(character.DrawPosition);
+                            RectangleF entityAABB = AABB.CalculateDynamic(character);
                             GUI.DrawRectangle(
                                 spriteBatch,
                                 new Vector2[]

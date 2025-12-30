@@ -351,6 +351,7 @@ namespace Whosyouradddy.ShadowCulling.Geometry
 
     public struct Shadow
     {
+        public readonly ConvexHull ConvexHull;
         public Vector2 LightSource;
         public Segment Occluder;
         public Ray Ray1;
@@ -358,8 +359,9 @@ namespace Whosyouradddy.ShadowCulling.Geometry
         public float RayScanDir;
         private int _hashCode = 0;
 
-        public Shadow(Vector2 lightSource, Vector2 vertex1, Vector2 vertex2)
+        public Shadow(ConvexHull convexHull, Vector2 lightSource, Vector2 vertex1, Vector2 vertex2)
         {
+            ConvexHull = convexHull;
             LightSource = lightSource;
             Occluder = new(vertex1, vertex2);
             Ray1 = new(vertex1, vertex1 - lightSource);
@@ -435,26 +437,26 @@ namespace Whosyouradddy.ShadowCulling.Geometry
             return MathUtils.WrapAnglePi(MathF.Atan2(p1.Y, p1.X) - MathF.Atan2(p2.Y, p2.X));
         }
 
-        public static void AddDrawPointF(ref this RectangleF rect, in Vector2 v2)
+        public static void AddDrawPointF(ref this RectangleF rect, in Vector2 p)
         {
-            if (v2.X < rect.X)
+            if (p.X < rect.X)
             {
-                rect.Width += rect.X - v2.X;
-                rect.X = v2.X;
+                rect.Width += rect.X - p.X;
+                rect.X = p.X;
             }
-            else if (v2.X > rect.Right)
+            else if (p.X > rect.Right)
             {
-                rect.Width += v2.X - rect.Right;
+                rect.Width += p.X - rect.Right;
             }
 
-            if (v2.Y > rect.Y)
+            if (p.Y > rect.Y)
             {
-                rect.Height += v2.Y - rect.Y;
-                rect.Y = v2.Y;
+                rect.Height += p.Y - rect.Y;
+                rect.Y = p.Y;
             }
-            else if (v2.Y < rect.Y - rect.Height)
+            else if (p.Y < rect.Y - rect.Height)
             {
-                rect.Height += rect.Y - rect.Height - v2.Y;
+                rect.Height += rect.Y - rect.Height - p.Y;
             }
         }
     }

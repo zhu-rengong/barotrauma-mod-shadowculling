@@ -52,6 +52,7 @@ namespace Whosyouradddy.ShadowCulling
         private static bool cullingStateDirty = false;
 
         private static Shadow[] validShadowBuffer = new Shadow[1024];
+        private static HashSet<ConvexHull> drawableLos = new(1024);
         private static LinkedList<int> shadowIndexLinkedList = new();
         private static Dictionary<Quadrant, RayRange> quadrants = new(4);
         private static Dictionary<int, Quadrant> shadowIndexQuadrant = new(1024);
@@ -59,13 +60,14 @@ namespace Whosyouradddy.ShadowCulling
         private static LinkedList<Segment> shadowClippingOccluders = new();
         private static HashSet<int> predictableOccluderStart = new(1024);
         private static HashSet<int> predictableOccluderEnd = new(1024);
-        private static List<MapEntity> entitiesForCulling = new(8192);
         private static List<Hull> hullsForCulling = new(1024);
+        private static List<MapEntity> entitiesForCulling = new(8192);
         private static List<Character> charactersForCulling = new(256);
         private const int PARALLELISM = 4;
         private const int CONCURRENCY_LEVEL = PARALLELISM * 3;
-        private static ConcurrentDictionary<Entity, Hull?> entityHull = new(CONCURRENCY_LEVEL, 8192);
-        private static ConcurrentDictionary<Entity, bool> isEntityCulled = new(CONCURRENCY_LEVEL, 8192);
+        private static ConcurrentDictionary<object, RectangleF> entityVisibleExtents = new(CONCURRENCY_LEVEL, 32768);
+        private static ConcurrentDictionary<object, Hull?> entityHull = new(CONCURRENCY_LEVEL, 8192);
+        private static ConcurrentDictionary<object, bool> isEntityCulled = new(CONCURRENCY_LEVEL, 8192);
         private static Vector2? previousViewRelativePos;
         private static ObjectPool<LinkedList<Segment>> poolLinkedListSegment = new(() => new());
 
@@ -80,6 +82,24 @@ namespace Whosyouradddy.ShadowCulling
                 ? GameMain.GameSession == null || !GameMain.GameSession.IsRunning
                 : !GameMain.Client?.GameStarted ?? true);
 
+        private static void TryClearAll()
+        {
+            if (cullingStateDirty)
+            {
+                Array.Clear(validShadowBuffer);
+                drawableLos.Clear();
+                hullsForCulling.Clear();
+                entitiesForCulling.Clear();
+                charactersForCulling.Clear();
+                entityVisibleExtents.Clear();
+                entityHull.Clear();
+                isEntityCulled.Clear();
+                previousViewRelativePos = null;
+                LuaCsLogger.LogMessage($"Mod:ShadowCulling | Clear All!");
+                cullingStateDirty = false;
+            }
+        }
+
         public partial void InitializeProjSpecific()
         {
             quadrants.Add(Quadrant.RightTop, new(Vector2.Zero, Vector2.UnitX, Vector2.UnitY));
@@ -88,22 +108,15 @@ namespace Whosyouradddy.ShadowCulling
             quadrants.Add(Quadrant.RightBottom, new(Vector2.Zero, Vector2.UnitX, -Vector2.UnitY));
         }
 
-        public static void PerformEntityCulling()
+        public static void PerformEntityCulling(bool debug = false)
         {
+            if (!debug && !CullingEnabled) { return; }
+
             if (DisallowCulling
                 || LightManager.ViewTarget is not Entity viewTarget
                 || Screen.Selected?.Cam is not Camera camera)
             {
-                if (cullingStateDirty)
-                {
-                    hullsForCulling.Clear();
-                    entitiesForCulling.Clear();
-                    charactersForCulling.Clear();
-                    isEntityCulled.Clear();
-                    entityHull.Clear();
-                    cullingStateDirty = false;
-                    previousViewRelativePos = null;
-                }
+                TryClearAll();
                 return;
             }
 
@@ -146,7 +159,7 @@ namespace Whosyouradddy.ShadowCulling
             {
                 foreach (ConvexHull convexHull in hullList.List)
                 {
-                    if (convexHull.IsInvalid || !convexHull.Enabled || convexHull.ShadowVertexCount < 6) { continue; }
+                    if (convexHull.IsInvalid || !convexHull.Enabled) { continue; }
 
                     Rectangle convexHullAABB = convexHull.BoundingBox;
                     // In the world coordinate, the origin of the ConvexHull.BoundingBox is assumed to be left-bottom corner(perhaps due to historical reasons?)
@@ -185,6 +198,7 @@ namespace Whosyouradddy.ShadowCulling
                     }
 
                     validShadowBuffer[validShadowNumber] = new(
+                        convexHull,
                         lightSource: viewTargetPosition,
                         vertex1: vertexPos0 - occluderVertexOffset,
                         vertex2: vertexPos1 + occluderVertexOffset
@@ -275,6 +289,12 @@ namespace Whosyouradddy.ShadowCulling
 
             sortedShadowIndices.Clear();
             sortedShadowIndices.AddRange(shadowIndexLinkedList);
+
+            drawableLos.Clear();
+            foreach (int index in sortedShadowIndices)
+            {
+                drawableLos.Add(validShadowBuffer[index].ConvexHull);
+            }
 
             // Calculate the shadow tolerance based on the view's predicted position to avoid "face-close loading".
             if (viewDirection.LengthSquared() > 0.01f)
@@ -394,14 +414,13 @@ namespace Whosyouradddy.ShadowCulling
                         int startIndex = index * HULLS_PER_CULLING;
                         Cull(hullsForCulling,
                             fromInclusive: startIndex,
-                            toExclusive: Math.Min(startIndex + HULLS_PER_CULLING, hullsForCulling.Count),
-                            hullRenderCulling: true, characterRenderCulling: false);
+                            toExclusive: Math.Min(startIndex + HULLS_PER_CULLING, hullsForCulling.Count));
                     }
                 );
             }
             else
             {
-                Cull(hullsForCulling, fromInclusive: 0, toExclusive: hullsForCulling.Count, hullRenderCulling: true, characterRenderCulling: false);
+                Cull(hullsForCulling, fromInclusive: 0, toExclusive: hullsForCulling.Count);
             }
 
             entitiesForCulling.Clear();
@@ -418,21 +437,20 @@ namespace Whosyouradddy.ShadowCulling
                         int startIndex = index * ENTITIES_PER_CULLING;
                         Cull(entitiesForCulling,
                             fromInclusive: startIndex,
-                            toExclusive: Math.Min(startIndex + ENTITIES_PER_CULLING, entitiesForCulling.Count),
-                            hullRenderCulling: false, characterRenderCulling: false);
+                            toExclusive: Math.Min(startIndex + ENTITIES_PER_CULLING, entitiesForCulling.Count));
                     }
                 );
             }
             else
             {
-                Cull(entitiesForCulling, fromInclusive: 0, toExclusive: entitiesForCulling.Count, hullRenderCulling: false, characterRenderCulling: false);
+                Cull(entitiesForCulling, fromInclusive: 0, toExclusive: entitiesForCulling.Count);
             }
 
             charactersForCulling.Clear();
             charactersForCulling.AddRange(Character.CharacterList.Where(c => c.IsVisible));
-            Cull(charactersForCulling, fromInclusive: 0, toExclusive: charactersForCulling.Count, hullRenderCulling: false, characterRenderCulling: true);
+            Cull(charactersForCulling, fromInclusive: 0, toExclusive: charactersForCulling.Count);
 
-            void Cull<T>(List<T> entities, int fromInclusive, int toExclusive, bool hullRenderCulling, bool characterRenderCulling) where T : Entity
+            void Cull<T>(List<T> entities, int fromInclusive, int toExclusive) where T : Entity
             {
                 Span<Segment> entityEdges = stackalloc Segment[8];
                 Span<Segment> edgeClipBuffer = stackalloc Segment[3];
@@ -445,15 +463,70 @@ namespace Whosyouradddy.ShadowCulling
                     // The origin is at the top left
                     RectangleF entityAABB;
 
-                    if (hullRenderCulling)
+                    if (typeof(T) == typeof(Hull) && entity is Hull hull)
                     {
-                        entityAABB = (entity as MapEntity)!.WorldRect;
+                        entityAABB = hull.WorldRect;
                     }
-                    else if (characterRenderCulling)
+                    else if (typeof(T) == typeof(Character) && entity is Character character && character != viewTarget)
                     {
-                        if (entity is Character character && character != viewTarget)
+                        entityAABB = AABB.CalculateDynamic(character);
+                    }
+                    else if (typeof(T) == typeof(MapEntity))
+                    {
+                        if (entity is Item item)
                         {
-                            entityAABB = AABB.Calculate(character);
+                            if (!item.cachedVisibleExtents.HasValue || item.IsHidden || !item.Visible || item.isWire)
+                            {
+                                continue;
+                            }
+
+                            entityAABB = item.cachedVisibleExtents.Value;
+                            entityAABB.Width -= entityAABB.X;
+                            entityAABB.Height -= entityAABB.Y;
+                            entityAABB.Y += entityAABB.Height;
+                            entityAABB.Offset(entity.DrawPosition);
+
+                            if (item.CurrentHull is Hull itemHull && isEntityCulled.TryGetValue(itemHull, out bool _))
+                            {
+                                RectangleF hullAABB = itemHull.WorldRect;
+                                if (entityAABB.X > hullAABB.X && entityAABB.Y < hullAABB.Y
+                                    && entityAABB.X + entityAABB.Width < hullAABB.X + hullAABB.Width
+                                    && entityAABB.Y - entityAABB.Height > hullAABB.Y - hullAABB.Height)
+                                {
+                                    goto CULL;
+                                }
+                            }
+                        }
+                        else if (entity is Structure structure)
+                        {
+                            if (structure.IsHidden)
+                            {
+                                continue;
+                            }
+
+                            if (!entityVisibleExtents.TryGetValue(entity, out RectangleF extents))
+                            {
+                                entityVisibleExtents.TryAdd(entity, extents = AABB.CalculateFixed(structure));
+                            }
+
+                            entityAABB = extents;
+                            entityAABB.Offset(entity.DrawPosition);
+
+                            if (!entityHull.TryGetValue(entity, out Hull? structureHull))
+                            {
+                                entityHull.TryAdd(entity, structureHull = Hull.FindHull(structure.WorldPosition));
+                            }
+
+                            if (structureHull != null && isEntityCulled.TryGetValue(structureHull, out bool _))
+                            {
+                                RectangleF hullAABB = structureHull.WorldRect;
+                                if (entityAABB.X > hullAABB.X && entityAABB.Y < hullAABB.Y
+                                    && entityAABB.X + entityAABB.Width < hullAABB.X + hullAABB.Width
+                                    && entityAABB.Y - entityAABB.Height > hullAABB.Y - hullAABB.Height)
+                                {
+                                    goto CULL;
+                                }
+                            }
                         }
                         else
                         {
@@ -462,65 +535,7 @@ namespace Whosyouradddy.ShadowCulling
                     }
                     else
                     {
-                        switch (entity)
-                        {
-                            case Item item:
-                                if (!item.cachedVisibleExtents.HasValue || item.isWire)
-                                {
-                                    continue;
-                                }
-
-                                entityAABB = item.cachedVisibleExtents.Value;
-                                entityAABB.Offset(item.DrawPosition.X, item.DrawPosition.Y);
-
-                                // In Vanilla, the AABB bounds calculation is messed up:
-                                // ClientSource/Items/Item.cs | cachedVisibleExtents = extents = new Rectangle(min.ToPoint(), max.ToPoint());
-                                // The correct one should be:
-                                // cachedVisibleExtents = extents = new Rectangle(min.ToPoint(), (max - min).ToPoint());
-                                // I have to recalculate the cached extents in real-time here:
-                                entityAABB.Width *= 2;
-                                entityAABB.Height *= 2;
-                                entityAABB.Y += entityAABB.Height;
-
-                                if (item.CurrentHull is Hull itemHull && isEntityCulled.TryGetValue(itemHull, out bool _))
-                                {
-                                    RectangleF hullAABB = itemHull.WorldRect;
-                                    if (entityAABB.X > hullAABB.X && entityAABB.Y < hullAABB.Y
-                                        && entityAABB.X + entityAABB.Width < hullAABB.X + hullAABB.Width
-                                        && entityAABB.Y - entityAABB.Height > hullAABB.Y - hullAABB.Height)
-                                    {
-                                        goto CULL;
-                                    }
-                                }
-                                break;
-                            case Structure structure:
-                                if (structure.Prefab.DecorativeSprites.Length > 0) { continue; }
-
-                                entityAABB = Quad2D.FromSubmarineRectangle(structure.WorldRect).Rotated(
-                                   structure.FlippedX != structure.FlippedY
-                                       ? structure.RotationRad
-                                       : -structure.RotationRad).BoundingAxisAlignedRectangle;
-                                entityAABB.Y += entityAABB.Height;
-
-                                if (!entityHull.TryGetValue(entity, out Hull? structureHull))
-                                {
-                                    entityHull.TryAdd(entity, structureHull = Hull.FindHull(structure.WorldPosition));
-                                }
-
-                                if (structureHull != null && isEntityCulled.TryGetValue(structureHull, out bool _))
-                                {
-                                    RectangleF hullAABB = structureHull.WorldRect;
-                                    if (entityAABB.X > hullAABB.X && entityAABB.Y < hullAABB.Y
-                                        && entityAABB.X + entityAABB.Width < hullAABB.X + hullAABB.Width
-                                        && entityAABB.Y - entityAABB.Height > hullAABB.Y - hullAABB.Height)
-                                    {
-                                        goto CULL;
-                                    }
-                                }
-                                break;
-                            default:
-                                continue;
-                        }
+                        continue;
                     }
 
                     Vector2 leftTop = new(entityAABB.X, entityAABB.Y);

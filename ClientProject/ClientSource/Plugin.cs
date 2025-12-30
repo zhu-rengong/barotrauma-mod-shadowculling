@@ -5,7 +5,9 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using Barotrauma;
+using Barotrauma.Extensions;
 using Barotrauma.Items.Components;
+using Barotrauma.Lights;
 using FarseerPhysics;
 using HarmonyLib;
 using Microsoft.Xna.Framework;
@@ -64,10 +66,19 @@ namespace Whosyouradddy.ShadowCulling
         {
             static void Postfix()
             {
-                if (CullingEnabled)
-                {
-                    PerformEntityCulling();
-                }
+                PerformEntityCulling();
+            }
+        }
+
+        [HarmonyPatch(
+            declaringType: typeof(Item),
+            methodName: nameof(Item.Remove)
+        )]
+        class Item_Remove
+        {
+            static void Postfix(Item __instance)
+            {
+                entityVisibleExtents.TryRemove(__instance, out var _);
             }
         }
 
@@ -79,12 +90,7 @@ namespace Whosyouradddy.ShadowCulling
         {
             static void Postfix()
             {
-                hullsForCulling.Clear();
-                entitiesForCulling.Clear();
-                charactersForCulling.Clear();
-                isEntityCulled.Clear();
-                entityHull.Clear();
-                LuaCsLogger.LogMessage($"Mod:ShadowCulling | Reset");
+                TryClearAll();
             }
         }
 
@@ -233,6 +239,24 @@ namespace Whosyouradddy.ShadowCulling
             }
         }
 
+        [HarmonyPatch(
+            declaringType: typeof(ConvexHull),
+            methodName: nameof(ConvexHull.CalculateLosVertices)
+        )]
+        class ConvexHull_CalculateLosVertices
+        {
+            static bool Prefix(ConvexHull __instance)
+            {
+                if (drawableLos.Any() && !drawableLos.Contains(__instance))
+                {
+                    __instance.ShadowVertexCount = 0;
+                    __instance.PenumbraVertexCount = 0;
+                    return false;
+                }
+
+                return true;
+            }
+        }
 
         // The drawing of light is managed by the LightManager,
         // and its rendering is independent of culling,
