@@ -1,21 +1,9 @@
 [h2]介绍 | Introduction | Введение[/h2]
-不会渲染被阴影遮挡的实体（物品、结构体），显著减轻CPU和低配GPU负载，在物品繁多的密室场景以及远视野下效果更加明显。
+不会渲染被阴影遮挡的实体（物品、结构体、角色），显著减轻CPU和低配GPU负载，在物品繁多的密室场景以及远视野下效果更加明显。
 
-Does not render entities (items, structures) that are blocked by shadows, significantly reducing the load on the CPU and low-end GPUs. The effect is more noticeable in densely packed dungeon-like environments​ and with long view distances.
+Does not render entities (items, structures, characters) that are blocked by shadows, significantly reducing the load on the CPU and low-end GPUs. The effect is more noticeable in densely packed dungeon-like environments​ and with long view distances.
 
-Не отображает объекты (предметы, структуры), скрытые в тени, что значительно снижает нагрузку на процессор и слабые видеокарты. Эффект особенно заметен в переполненных объектах подземельях/помещениях​ и при отрисовке дальних дистанций.
-
-[hr][/hr]
-[h2]优化细节 | Optimize details | Оптимизировать детали[/h2]
-[list]
-[*]多核调度，同时支持4个逻辑核心
-[/list]
-[list]
-[*]Multi-core scheduling, supporting up to 4 logical cores simultaneously.
-[/list]
-[list]
-[*] Многопроцессорное планирование с одновременной поддержкой до 4 логических ядер.
-[/list]
+Не отображает объекты (предметы, структуры, роли), скрытые в тени, что значительно снижает нагрузку на процессор и слабые видеокарты. Эффект особенно заметен в переполненных объектах подземельях/помещениях​ и при отрисовке дальних дистанций.
 
 [hr][/hr]
 [h2]使用 | Usage | Использование[/h2]
@@ -54,6 +42,3 @@ Does not render entities (items, structures) that are blocked by shadows, signif
 [url=https://github.com/zhu-rengong/barotrauma-mod-shadowculling]Github[/url]
 
 [img=https://images.steamusercontent.com/ugc/12955598015651579469/F1A927E4B12162CC6CEC3FC4B7C93120CDA4EFC2/?imw=1024&&ima=fit&impolicy=Letterbox&imcolor=%23000000&letterbox=false][/img]
-
-[hr][/hr]
-[h2]仍在完善中 | WIP Stage | Находится в стадии разработки[/h2]
