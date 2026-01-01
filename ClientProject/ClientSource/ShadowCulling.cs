@@ -180,17 +180,11 @@ namespace Whosyouradddy.ShadowCulling
                     if (convexHullAABB.Y < cameraViewBounds.Y - cameraViewBounds.Height) { continue; }
                     if (convexHullAABB.Y - convexHullAABB.Height > cameraViewBounds.Y) { continue; }
 
-                    if (convexHull.ParentEntity is Item item
-                        && item.GetComponent<Door>() is Door { OpenState: > 0.0f and < 1.0f })
-                    {
-                        continue;
-                    }
-
                     Vector2 vertexPos0 = convexHull.losVertices[0].Pos + convexHull.losOffsets[0] + offsetToAbs;
                     Vector2 vertexPos1 = convexHull.losVertices[1].Pos + convexHull.losOffsets[1] + offsetToAbs;
                     if (Vector2.DistanceSquared(vertexPos0, vertexPos1) < 1.0f) { continue; }
 
-                    Vector2 occluderVertexOffset = Vector2.Normalize(vertexPos1 - vertexPos0);
+                    Vector2 occluderVertexUnitOffset = Vector2.Normalize(vertexPos1 - vertexPos0);
 
                     if (validShadowNumber >= validShadowBuffer.Length)
                     {
@@ -200,13 +194,31 @@ namespace Whosyouradddy.ShadowCulling
                     validShadowBuffer[validShadowNumber] = new(
                         convexHull,
                         lightSource: viewTargetPosition,
-                        vertex1: vertexPos0 - occluderVertexOffset,
-                        vertex2: vertexPos1 + occluderVertexOffset
+                        vertex1: vertexPos0 - occluderVertexUnitOffset,
+                        vertex2: vertexPos1 + occluderVertexUnitOffset
                     );
 
-                    shadowIndexLinkedList.AddLast(validShadowNumber);
+                    ref Shadow shadow = ref validShadowBuffer[validShadowNumber];
+                    ref Segment occluder = ref shadow.Occluder;
 
-                    ref readonly Segment occluder = ref validShadowBuffer[validShadowNumber].Occluder;
+                    if (convexHull.ParentEntity is Item item
+                        && item.GetComponent<Door>() is Door { OpenState: > 0.0f and < 1.0f } door)
+                    {
+                        Vector2 doorLosVertexOffset = occluderVertexUnitOffset
+                                                    * MathF.Min(
+                                                        occluder.Length - 1.0f,
+                                                        100.0f * (door.IsOpen ? door.OpeningSpeed : door.ClosingSpeed));
+                        if (door.IsOpen ^ (door.IsHorizontal ? item.FlippedX : true))
+                        {
+                            occluder.End -= doorLosVertexOffset;
+                        }
+                        else
+                        {
+                            occluder.Start += doorLosVertexOffset;
+                        }
+                        shadow.DoCalculate(viewTargetPosition, occluder.Start, occluder.End);
+                    }
+
                     Quadrant occluderQuadrant = Quadrant.None;
                     foreach (var (quadrant, rayRange) in quadrants)
                     {
@@ -216,6 +228,7 @@ namespace Whosyouradddy.ShadowCulling
                         }
                     }
 
+                    shadowIndexLinkedList.AddLast(validShadowNumber);
                     shadowIndexQuadrant.Add(validShadowNumber, occluderQuadrant);
 
                     validShadowNumber++;

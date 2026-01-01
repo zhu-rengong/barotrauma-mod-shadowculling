@@ -71,18 +71,6 @@ namespace Whosyouradddy.ShadowCulling
         }
 
         [HarmonyPatch(
-            declaringType: typeof(Item),
-            methodName: nameof(Item.Remove)
-        )]
-        class Item_Remove
-        {
-            static void Postfix(Item __instance)
-            {
-                entityVisibleExtents.TryRemove(__instance, out var _);
-            }
-        }
-
-        [HarmonyPatch(
             declaringType: typeof(Entity),
             methodName: nameof(Entity.RemoveAll)
         )]
