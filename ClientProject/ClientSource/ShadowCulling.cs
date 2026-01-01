@@ -204,10 +204,12 @@ namespace Whosyouradddy.ShadowCulling
                     if (convexHull.ParentEntity is Item item
                         && item.GetComponent<Door>() is Door { OpenState: > 0.0f and < 1.0f } door)
                     {
+                        float doorStateDelta = (door.IsOpen ? door.OpeningSpeed : door.ClosingSpeed) * (float)Timing.Step;
                         Vector2 doorLosVertexOffset = occluderVertexUnitOffset
                                                     * MathF.Min(
-                                                        occluder.Length - 1.0f,
-                                                        100.0f * (door.IsOpen ? door.OpeningSpeed : door.ClosingSpeed));
+                                                        MathF.Max(0.0f, occluder.Length - doorStateDelta),
+                                                        500.0f * doorStateDelta);
+
                         if (door.IsOpen ^ (door.IsHorizontal ? item.FlippedX : true))
                         {
                             occluder.End -= doorLosVertexOffset;
