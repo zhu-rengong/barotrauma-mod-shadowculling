@@ -205,19 +205,13 @@ namespace Whosyouradddy.ShadowCulling
                         && item.GetComponent<Door>() is Door { OpenState: > 0.0f and < 1.0f } door)
                     {
                         float doorStateDelta = (door.IsOpen ? door.OpeningSpeed : door.ClosingSpeed) * (float)Timing.Step;
-                        Vector2 doorLosVertexOffset = occluderVertexUnitOffset
+                        Vector2 doorLosVertexOffset = 0.5f * occluderVertexUnitOffset
                                                     * MathF.Min(
                                                         MathF.Max(0.0f, occluder.Length - doorStateDelta),
-                                                        500.0f * doorStateDelta);
+                                                        800.0f * doorStateDelta);
 
-                        if (door.IsOpen ^ (door.IsHorizontal ? item.FlippedX : true))
-                        {
-                            occluder.End -= doorLosVertexOffset;
-                        }
-                        else
-                        {
-                            occluder.Start += doorLosVertexOffset;
-                        }
+                        occluder.End -= doorLosVertexOffset;
+                        occluder.Start += doorLosVertexOffset;
                         shadow.DoCalculate(viewTargetPosition, occluder.Start, occluder.End);
                     }
 
