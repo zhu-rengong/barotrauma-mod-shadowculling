@@ -227,25 +227,6 @@ namespace Whosyouradddy.ShadowCulling
             }
         }
 
-        [HarmonyPatch(
-            declaringType: typeof(ConvexHull),
-            methodName: nameof(ConvexHull.CalculateLosVertices)
-        )]
-        class ConvexHull_CalculateLosVertices
-        {
-            static bool Prefix(ConvexHull __instance)
-            {
-                if (drawableLos.Any() && !drawableLos.Contains(__instance))
-                {
-                    __instance.ShadowVertexCount = 0;
-                    __instance.PenumbraVertexCount = 0;
-                    return false;
-                }
-
-                return true;
-            }
-        }
-
         // The drawing of light is managed by the LightManager,
         // and its rendering is independent of culling,
         // so we do not need to use its DrawSize to calculate the AABB.

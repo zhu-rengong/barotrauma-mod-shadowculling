@@ -52,7 +52,6 @@ namespace Whosyouradddy.ShadowCulling
         private static bool cullingStateDirty = false;
 
         private static Shadow[] validShadowBuffer = new Shadow[1024];
-        private static HashSet<ConvexHull> drawableLos = new(1024);
         private static LinkedList<int> shadowIndexLinkedList = new();
         private static Dictionary<Quadrant, RayRange> quadrants = new(4);
         private static Dictionary<int, Quadrant> shadowIndexQuadrant = new(1024);
@@ -87,7 +86,6 @@ namespace Whosyouradddy.ShadowCulling
             if (cullingStateDirty)
             {
                 Array.Clear(validShadowBuffer);
-                drawableLos.Clear();
                 hullsForCulling.Clear();
                 entitiesForCulling.Clear();
                 charactersForCulling.Clear();
@@ -159,7 +157,7 @@ namespace Whosyouradddy.ShadowCulling
             {
                 foreach (ConvexHull convexHull in hullList.List)
                 {
-                    if (convexHull.IsInvalid || !convexHull.Enabled) { continue; }
+                    if (convexHull.IsInvalid || !convexHull.Enabled || convexHull.ShadowVertexCount < 6) { continue; }
 
                     Rectangle convexHullAABB = convexHull.BoundingBox;
                     // In the world coordinate, the origin of the ConvexHull.BoundingBox is assumed to be left-bottom corner(perhaps due to historical reasons?)
@@ -298,12 +296,6 @@ namespace Whosyouradddy.ShadowCulling
 
             sortedShadowIndices.Clear();
             sortedShadowIndices.AddRange(shadowIndexLinkedList);
-
-            drawableLos.Clear();
-            foreach (int index in sortedShadowIndices)
-            {
-                drawableLos.Add(validShadowBuffer[index].ConvexHull);
-            }
 
             // Calculate the shadow tolerance based on the view's predicted position to avoid "face-close loading".
             if (viewDirection.LengthSquared() > 0.01f)
