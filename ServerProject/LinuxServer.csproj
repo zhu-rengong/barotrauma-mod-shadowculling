@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
-    <Reference Include="Barotrauma">
-      <HintPath>..\Refs\Linux\Barotrauma.dll</HintPath>
+    <Reference Include="DedicatedServer">
+      <HintPath>..\Refs\Linux\DedicatedServer.dll</HintPath>
     </Reference>
     <Reference Include="BarotraumaCore">
       <HintPath>..\Refs\Linux\BarotraumaCore.dll</HintPath>
@@ -15,11 +15,11 @@
   <Import Project="../Build.props" />
 
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
-    <DefineConstants>TRACE;LINUX;CLIENT</DefineConstants>
+    <DefineConstants>TRACE;LINUX;SERVER</DefineConstants>
   </PropertyGroup>
 
   <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
-    <DefineConstants>TRACE;LINUX;CLIENT</DefineConstants>
+    <DefineConstants>TRACE;LINUX;SERVER</DefineConstants>
   </PropertyGroup>
 
   <Target Name="CopyFiles" AfterTargets="Build">
@@ -27,8 +27,8 @@
       <Assemblies Include="$(TargetDir)$(TargetName).dll" />
       <DepsFiles Include="$(TargetDir)$(TargetName).deps.json" />
     </ItemGroup>
-    <Copy SourceFiles="@(Assemblies)" DestinationFiles="$(MSBuildThisFileDirectory)..\ContentPackageBuilder\Content\bin\Client\Linux\$(TargetName).dll" />
-    <Copy SourceFiles="@(DepsFiles)" DestinationFiles="$(MSBuildThisFileDirectory)..\ContentPackageBuilder\Content\bin\Client\Linux\$(TargetName).deps.json" />
+    <Copy SourceFiles="@(Assemblies)" DestinationFiles="$(MSBuildThisFileDirectory)..\ContentPackageBuilder\Content\bin\Server\Linux\$(TargetName).dll" />
+    <Copy SourceFiles="@(DepsFiles)" DestinationFiles="$(MSBuildThisFileDirectory)..\ContentPackageBuilder\Content\bin\Server\Linux\$(TargetName).deps.json" />
   </Target>
 
 </Project>

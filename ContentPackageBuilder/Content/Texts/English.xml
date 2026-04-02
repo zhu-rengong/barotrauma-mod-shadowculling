@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<infotexts language="English" nowhitespace="false" translatedname="English">
+  <!-- Settings -->
+  <ShadowCulling.CullingEnabled.DisplayName>Shadow Enable Culling</ShadowCulling.CullingEnabled.DisplayName>
+  <ShadowCulling.CullingEnabled.Tooltip>When enabled, game entities such as items, structures, and characters that are completely occluded by shadows will not be rendered, resulting in significant performance improvements in complex scenes. (Only takes effect when LOS is enabled.)</ShadowCulling.CullingEnabled.Tooltip>
+  <ShadowCulling.CullingEnabled.DisplayCategory>Optimizations</ShadowCulling.CullingEnabled.DisplayCategory>
+
+  <ShadowCulling.CullingInterval.DisplayName>Shadow Culling Interval</ShadowCulling.CullingInterval.DisplayName>
+  <ShadowCulling.CullingInterval.Tooltip>Higher values improve performance but may cause 'flickering' as entities are not culled in time. 0.05s is recommended.</ShadowCulling.CullingInterval.Tooltip>
+  <ShadowCulling.CullingInterval.DisplayCategory>Optimizations</ShadowCulling.CullingInterval.DisplayCategory>
+
+  <ShadowCulling.DebugLoggingEnabled.DisplayCategory>Debug</ShadowCulling.DebugLoggingEnabled.DisplayCategory>
+  <ShadowCulling.DebugDrawingEnabled.DisplayCategory>Debug</ShadowCulling.DebugDrawingEnabled.DisplayCategory>
+  <ShadowCulling.DebugDrawingHull.DisplayCategory>Debug</ShadowCulling.DebugDrawingHull.DisplayCategory>
+  <ShadowCulling.DebugDrawingShadow.DisplayCategory>Debug</ShadowCulling.DebugDrawingShadow.DisplayCategory>
+  <ShadowCulling.DebugDrawingShadowLength.DisplayCategory>Debug</ShadowCulling.DebugDrawingShadowLength.DisplayCategory>
+  <ShadowCulling.DebugDrawingItem.DisplayCategory>Debug</ShadowCulling.DebugDrawingItem.DisplayCategory>
+  <ShadowCulling.DebugDrawingStructure.DisplayCategory>Debug</ShadowCulling.DebugDrawingStructure.DisplayCategory>
+  <ShadowCulling.DebugDrawingCharacter.DisplayCategory>Debug</ShadowCulling.DebugDrawingCharacter.DisplayCategory>
+</infotexts>

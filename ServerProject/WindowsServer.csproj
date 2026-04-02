@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
-    <Reference Include="Barotrauma">
-      <HintPath>..\Refs\Windows\Barotrauma.dll</HintPath>
+    <Reference Include="DedicatedServer">
+      <HintPath>..\Refs\Windows\DedicatedServer.dll</HintPath>
     </Reference>
     <Reference Include="BarotraumaCore">
       <HintPath>..\Refs\Windows\BarotraumaCore.dll</HintPath>
@@ -15,11 +15,11 @@
   <Import Project="../Build.props" />
 
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
-    <DefineConstants>TRACE;WINDOWS;CLIENT</DefineConstants>
+    <DefineConstants>TRACE;WINDOWS;SERVER</DefineConstants>
   </PropertyGroup>
 
   <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
-    <DefineConstants>TRACE;WINDOWS;CLIENT</DefineConstants>
+    <DefineConstants>TRACE;WINDOWS;SERVER</DefineConstants>
   </PropertyGroup>
 
   <Target Name="CopyFiles" AfterTargets="Build">
@@ -27,8 +27,8 @@
       <Assemblies Include="$(TargetDir)$(TargetName).dll" />
       <DepsFiles Include="$(TargetDir)$(TargetName).deps.json" />
     </ItemGroup>
-    <Copy SourceFiles="@(Assemblies)" DestinationFiles="$(MSBuildThisFileDirectory)..\ContentPackageBuilder\Content\bin\Client\Windows\$(TargetName).dll" />
-    <Copy SourceFiles="@(DepsFiles)" DestinationFiles="$(MSBuildThisFileDirectory)..\ContentPackageBuilder\Content\bin\Client\Windows\$(TargetName).deps.json" />
+    <Copy SourceFiles="@(Assemblies)" DestinationFiles="$(MSBuildThisFileDirectory)..\ContentPackageBuilder\Content\bin\Server\Windows\$(TargetName).dll" />
+    <Copy SourceFiles="@(DepsFiles)" DestinationFiles="$(MSBuildThisFileDirectory)..\ContentPackageBuilder\Content\bin\Server\Windows\$(TargetName).deps.json" />
   </Target>
 
 </Project>
