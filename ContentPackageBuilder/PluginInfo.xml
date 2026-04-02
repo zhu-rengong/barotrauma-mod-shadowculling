@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<PluginInfos notsyncedinmultiplayer="true" >
+  <MainAssemblyInfo assemblypath="%ModDir%/Windows/%ModName%Client.dll" platforms="Windows" targets="Client" />
+  <MainAssemblyInfo assemblypath="%ModDir%/Linux/%ModName%Client.dll" platforms="Linux" targets="Client" />
+  <MainAssemblyInfo assemblypath="%ModDir%/Mac/%ModName%Client.dll" platforms="Mac" targets="Client" />
+</PluginInfos>

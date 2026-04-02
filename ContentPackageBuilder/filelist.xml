@@ -1,0 +1,4 @@
+﻿<?xml version="1.0" encoding="UTF-8" ?>
+<ContentPackage name="Shadow Culling (DLC testing)" modversion="1.0.0">
+  <PluginInfo file="%ModDir%/PluginInfo.xml" />
+</ContentPackage>

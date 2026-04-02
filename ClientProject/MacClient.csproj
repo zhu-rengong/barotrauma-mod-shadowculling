@@ -1,6 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <PlatformName>Windows</PlatformName>
+    <PlatformName>Mac</PlatformName>
   </PropertyGroup>
   <Import Project="ClientItems.props" />
 </Project>

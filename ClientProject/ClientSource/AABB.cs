@@ -1,12 +1,7 @@
-using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Runtime.CompilerServices;
-using Barotrauma;
+﻿using Barotrauma;
 using Microsoft.Xna.Framework;
-using Whosyouradddy.ShadowCulling.Geometry;
 
-namespace Whosyouradddy.ShadowCulling
+namespace ShadowCulling
 {
     public class AABB
     {

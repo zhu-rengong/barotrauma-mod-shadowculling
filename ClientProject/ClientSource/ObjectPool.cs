@@ -1,44 +1,67 @@
-using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Runtime.CompilerServices;
-using Microsoft.Xna.Framework;
+﻿using System.Collections.Concurrent;
 
-namespace Whosyouradddy.ShadowCulling
+namespace ShadowCulling
 {
+    /// <summary>
+    /// A generic object pool for reusing objects to reduce garbage collection overhead.
+    /// </summary>
+    /// <typeparam name="T">The type of objects to pool. Must be a reference type.</typeparam>
     public class ObjectPool<T> where T : class
     {
-        private readonly ConcurrentQueue<T> _pool;
-        private readonly int _capacity;
-        private Func<T> _objectCreator;
+        private readonly ConcurrentQueue<T> _objectPool;
+        private readonly int _maxCapacity;
+        private readonly Func<T> _objectFactory;
 
-        public ObjectPool(Func<T> objectCreator, int capacity = 1024)
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ObjectPool{T}"/> class.
+        /// </summary>
+        /// <param name="objectFactory">The function used to create new instances of <typeparamref name="T"/>.</param>
+        /// <param name="maxCapacity">The maximum number of objects to keep in the pool.</param>
+        public ObjectPool(Func<T> objectFactory, int maxCapacity = 1024)
         {
-            _pool = new();
-            _capacity = capacity;
-            _objectCreator = objectCreator;
+            _objectPool = new ConcurrentQueue<T>();
+            _maxCapacity = maxCapacity;
+            _objectFactory = objectFactory ?? throw new ArgumentNullException(nameof(objectFactory));
         }
 
+        /// <summary>
+        /// Gets an object from the pool or creates a new one if the pool is empty.
+        /// </summary>
+        /// <returns>An instance of <typeparamref name="T"/>.</returns>
         public T Get()
         {
-            if (_pool.TryDequeue(out T? @object))
+            if (_objectPool.TryDequeue(out T? pooledObject))
             {
-                return @object!;
+                return pooledObject!;
             }
-            return _objectCreator();
+            return _objectFactory();
         }
 
-        public void Return(T @object)
+        /// <summary>
+        /// Returns an object to the pool for reuse.
+        /// </summary>
+        /// <param name="objectToReturn">The object to return to the pool.</param>
+        public void Return(T objectToReturn)
         {
-            if (@object == null) return;
-
-            if (_pool.Count < _capacity)
+            if (objectToReturn == null)
             {
-                _pool.Enqueue(@object);
+                return;
+            }
+
+            if (_objectPool.Count < _maxCapacity)
+            {
+                _objectPool.Enqueue(objectToReturn);
             }
         }
 
-        public int Count => _pool.Count;
-        public int Capacity => _capacity;
+        /// <summary>
+        /// Gets the current number of objects in the pool.
+        /// </summary>
+        public int Count => _objectPool.Count;
+
+        /// <summary>
+        /// Gets the maximum capacity of the pool.
+        /// </summary>
+        public int Capacity => _maxCapacity;
     }
 }
