@@ -271,13 +271,14 @@ public partial class Plugin
                     Array.Resize(ref validShadowBuffer, validShadowBuffer.Length + 1024);
                 }
 
-                Shadow shadow = validShadowBuffer[validShadowNumber] = new(
+                validShadowBuffer[validShadowNumber] = new(
                     convexHull,
                     lightSource: viewTargetPosition,
                     vertex1: vertex0Position - occluderVertexUnitOffset,
                     vertex2: vertex1Position + occluderVertexUnitOffset
                 );
 
+                ref Shadow shadow = ref validShadowBuffer[validShadowNumber];
                 ref Segment occluder = ref shadow.Occluder;
 
                 // Transforms shadows for doors, adjusting for open/close state.
