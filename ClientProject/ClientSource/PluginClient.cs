@@ -21,7 +21,6 @@ public partial class Plugin
     // Culling configuration constants
     private const int HullsPerBatch = 15;
     private const int EntitiesPerBatch = 65;
-    private const double CullingIntervalSeconds = 0.05;
     private const float ShadowPredictionToleranceMultiplier = 1000.0f;
     private const int ParallelismLevel = 4;
     private const int ConcurrencyLevel = ParallelismLevel * 3;
@@ -125,7 +124,7 @@ public partial class Plugin
             return;
         }
 
-        if (lastCullingUpdateTime > Timing.TotalTime - CullingIntervalSeconds) { return; }
+        if (lastCullingUpdateTime > Timing.TotalTime - CullingInterval) { return; }
 
         cullingPerformanceTimer.Restart();
 

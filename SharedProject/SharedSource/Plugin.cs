@@ -27,6 +27,7 @@ public partial class Plugin : IBarotraumaPlugin
 
     // Settings properties
     public static bool CullingEnabled => SettingsService.RetrieveSetting<BooleanSetting>("shadowculling.cullingenabled".ToIdentifier()) is BooleanSetting { Value: true };
+    public static float CullingInterval => SettingsService.RetrieveSetting<FloatSetting>("shadowculling.cullinginterval".ToIdentifier())?.Value ?? 0.05f;
     public static bool DebugLoggingEnabled => SettingsService.RetrieveSetting<BooleanSetting>("shadowculling.debuglog".ToIdentifier()) is BooleanSetting { Value: true };
     public static bool DebugDrawingEnabled => SettingsService.RetrieveSetting<BooleanSetting>("shadowculling.debugdraw".ToIdentifier()) is BooleanSetting { Value: true };
     public static bool DebugDrawingHull => SettingsService.RetrieveSetting<BooleanSetting>("shadowculling.debugdrawhull".ToIdentifier()) is BooleanSetting { Value: true };
@@ -81,6 +82,19 @@ public partial class Plugin : IBarotraumaPlugin
         settingsService.RegisterSetting(new BooleanSetting("shadowculling.cullingenabled".ToIdentifier(), true, label: "Enable shadow culling")
         {
             ShowInUI = true,
+            SyncMode = SettingSyncMode.NoSync
+        });
+
+        settingsService.RegisterSetting(new FloatSetting(
+            "shadowculling.cullinginterval".ToIdentifier(),
+            0.05f,
+            label: "Render culling interval (in seconds).")
+        {
+            ShowInUI = true,
+            UseSlider = true,
+            LabelFunc = (x) => $"{MathF.Round(x, 2)}s",
+            StepValue = 0.01f,
+            Range = (0f, 1f),
             SyncMode = SettingSyncMode.NoSync
         });
 
@@ -173,7 +187,7 @@ public partial class Plugin : IBarotraumaPlugin
 
         if (!cullingSetting.Value)
         {
-            Plugin.TryClearAll();
+            TryClearAll();
         }
     }
 

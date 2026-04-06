@@ -35,25 +35,6 @@ public static class HarmonyPatch
         }
     }
 
-    ///// <summary>
-    ///// In Vanilla, if you are too far from the center of a ladder, you won't be able to see it.
-    ///// </summary>
-    //[HarmonyLib.HarmonyPatch(
-    //    declaringType: typeof(Ladder),
-    //    methodName: nameof(Ladder.DrawSize),
-    //    methodType: MethodType.Getter
-    //)]
-    //private static class Ladder_DrawSize
-    //{
-    //    static bool Prefix(Ladder __instance, ref Vector2 __result)
-    //    {
-    //        // if (__instance.backgroundSprite == null) { return true; }
-    //        // __result.X = __instance.backgroundSprite.size.X * __instance.item.Scale;
-    //        // __result.Y = __instance.item.Rect.Height;
-    //        // return false;
-    //    }
-    //}
-
     #region Culling Integration
 
     [HarmonyLib.HarmonyPatch(
@@ -96,9 +77,9 @@ public static class HarmonyPatch
 
             var originalPredicate = predicate;
 
-            predicate = entity =>
-                !Plugin.IsEntityCulled.TryGetValue(entity, out bool _)
-                && (originalPredicate == null || originalPredicate(entity));
+            predicate = originalPredicate == null
+                 ? entity => !Plugin.IsEntityCulled.TryGetValue(entity, out bool _)
+                 : entity => !Plugin.IsEntityCulled.TryGetValue(entity, out bool _) && originalPredicate(entity);
         }
     }
 
@@ -114,9 +95,9 @@ public static class HarmonyPatch
 
             var originalPredicate = predicate;
 
-            predicate = entity =>
-                !Plugin.IsEntityCulled.TryGetValue(entity, out bool _)
-                && (originalPredicate == null || originalPredicate(entity));
+            predicate = originalPredicate == null
+                 ? entity => !Plugin.IsEntityCulled.TryGetValue(entity, out bool _)
+                 : entity => !Plugin.IsEntityCulled.TryGetValue(entity, out bool _) && originalPredicate(entity);
         }
     }
 
@@ -132,9 +113,9 @@ public static class HarmonyPatch
 
             var originalPredicate = predicate;
 
-            predicate = entity =>
-                !Plugin.IsEntityCulled.TryGetValue(entity, out bool _)
-                && (originalPredicate == null || originalPredicate(entity));
+            predicate = originalPredicate == null
+                 ? entity => !Plugin.IsEntityCulled.TryGetValue(entity, out bool _)
+                 : entity => !Plugin.IsEntityCulled.TryGetValue(entity, out bool _) && originalPredicate(entity);
         }
     }
 
