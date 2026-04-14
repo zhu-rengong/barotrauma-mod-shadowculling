@@ -3,14 +3,14 @@
 <Configuration>
     <Settings>
         <Setting Name="CullingEnabled" Type="bool" Value="true" />
-        <Setting Name="CullingInterval" Type="rangeFloat" Min="0" Max="0.2" Steps="0.01" Value="0.05" />
+        <Setting Name="CullingInterval" Type="rangeFloat" Min="0" Max="0.2" Steps="21" Value="0.05" />
         <Setting Name="DebugLoggingEnabled" Type="bool" Value="false" />
     </Settings>
     <Settings>
         <Setting Name="DebugDrawingEnabled" Type="bool" Value="false" />
         <Setting Name="DebugDrawingHull" Type="bool" Value="false" />
         <Setting Name="DebugDrawingShadow" Type="bool" Value="true" />
-        <Setting Name="DebugDrawingShadowLength" Type="rangeFloat" Min="0" Max="10000" Steps="100" Value="300" />
+        <Setting Name="DebugDrawingShadowLength" Type="rangeFloat" Min="0" Max="10000" Steps="101" Value="300" />
         <Setting Name="DebugDrawingItem" Type="bool" Value="true" />
         <Setting Name="DebugDrawingStructure" Type="bool" Value="true" />
         <Setting Name="DebugDrawingCharacter" Type="bool" Value="true" />

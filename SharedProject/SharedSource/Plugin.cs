@@ -21,9 +21,10 @@ public partial class Plugin : IAssemblyPlugin
         // When your plugin is loading, use this instead of the constructor for code relying on
         // the services above.
 
-        if (PluginManagementService.TryGetPackageForPlugin<Plugin>(out var package))
+        if (!PluginManagementService.TryGetPackageForPlugin<Plugin>(out _package))
         {
-            _package = package;
+            LoggerService.LogError("Failed to find package!");
+            return;
         }
 
         harmony = new("shadowculling");

@@ -9,12 +9,34 @@
   <ShadowCulling.CullingInterval.Tooltip>Higher values improve performance but may cause 'flickering' as entities are not culled in time. 0.05s is recommended.</ShadowCulling.CullingInterval.Tooltip>
   <ShadowCulling.CullingInterval.DisplayCategory>Optimizations</ShadowCulling.CullingInterval.DisplayCategory>
 
+  <ShadowCulling.DebugLoggingEnabled.DisplayName>Enable Debug Logging</ShadowCulling.DebugLoggingEnabled.DisplayName>
   <ShadowCulling.DebugLoggingEnabled.DisplayCategory>Debug</ShadowCulling.DebugLoggingEnabled.DisplayCategory>
+
+  <ShadowCulling.DebugDrawingEnabled.DisplayName>Enable Debug Drawing</ShadowCulling.DebugDrawingEnabled.DisplayName>
+  <ShadowCulling.DebugDrawingEnabled.Tooltip>Master toggle for all shadow culling debug visualizations. When disabled, none of the individual debug drawing options will be visible.</ShadowCulling.DebugDrawingEnabled.Tooltip>
   <ShadowCulling.DebugDrawingEnabled.DisplayCategory>Debug</ShadowCulling.DebugDrawingEnabled.DisplayCategory>
+
+  <ShadowCulling.DebugDrawingHull.DisplayName>Draw Culling Hulls</ShadowCulling.DebugDrawingHull.DisplayName>
+  <ShadowCulling.DebugDrawingHull.Tooltip>Visualize the hulls used to check shadow occluder.</ShadowCulling.DebugDrawingHull.Tooltip>
   <ShadowCulling.DebugDrawingHull.DisplayCategory>Debug</ShadowCulling.DebugDrawingHull.DisplayCategory>
+
+  <ShadowCulling.DebugDrawingShadow.DisplayName>Draw Shadow Casters</ShadowCulling.DebugDrawingShadow.DisplayName>
+  <ShadowCulling.DebugDrawingShadow.Tooltip>Visualize the shadow-casting geometry (light source direction lines) that drives the occlusion calculation.</ShadowCulling.DebugDrawingShadow.Tooltip>
   <ShadowCulling.DebugDrawingShadow.DisplayCategory>Debug</ShadowCulling.DebugDrawingShadow.DisplayCategory>
+
+  <ShadowCulling.DebugDrawingShadowLength.DisplayName>Draw Shadow Length Limits</ShadowCulling.DebugDrawingShadowLength.DisplayName>
+  <ShadowCulling.DebugDrawingShadowLength.Tooltip></ShadowCulling.DebugDrawingShadowLength.Tooltip>
   <ShadowCulling.DebugDrawingShadowLength.DisplayCategory>Debug</ShadowCulling.DebugDrawingShadowLength.DisplayCategory>
+
+  <ShadowCulling.DebugDrawingItem.DisplayName>Draw Item Bounds</ShadowCulling.DebugDrawingItem.DisplayName>
+  <ShadowCulling.DebugDrawingItem.Tooltip>Show bounding boxes of items and their culling status (visible/culled). light indicates rendered; dim culled by shadow.</ShadowCulling.DebugDrawingItem.Tooltip>
   <ShadowCulling.DebugDrawingItem.DisplayCategory>Debug</ShadowCulling.DebugDrawingItem.DisplayCategory>
+
+  <ShadowCulling.DebugDrawingStructure.DisplayName>Draw Structure Bounds</ShadowCulling.DebugDrawingStructure.DisplayName>
+  <ShadowCulling.DebugDrawingStructure.Tooltip>Show bounding boxes of structures and their culling status (visible/culled). light indicates rendered; dim culled by shadow.</ShadowCulling.DebugDrawingStructure.Tooltip>
   <ShadowCulling.DebugDrawingStructure.DisplayCategory>Debug</ShadowCulling.DebugDrawingStructure.DisplayCategory>
+
+  <ShadowCulling.DebugDrawingCharacter.DisplayName>Draw Character Bounds</ShadowCulling.DebugDrawingCharacter.DisplayName>
+  <ShadowCulling.DebugDrawingCharacter.Tooltip>Show bounding boxes of characters (NPCs, creatures) and their culling status (visible/culled). light indicates rendered; dim culled by shadow.</ShadowCulling.DebugDrawingCharacter.Tooltip>
   <ShadowCulling.DebugDrawingCharacter.DisplayCategory>Debug</ShadowCulling.DebugDrawingCharacter.DisplayCategory>
 </infotexts>
