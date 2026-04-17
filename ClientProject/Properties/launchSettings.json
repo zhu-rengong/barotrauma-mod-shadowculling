@@ -1,8 +1,11 @@
 {
   "profiles": {
+    "WindowsClient": {
+      "commandName": "Project"
+    },
     "Launch Barotrauma": {
       "commandName": "Executable",
-      "executablePath": "$(BarotraumaExecutableFilePath)"
+      "executablePath": "$(GameExecutablePath)"
     }
   }
 }

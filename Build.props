@@ -23,12 +23,12 @@
         <PackageReference Include="OneOf" Version="3.0.271" />
         <PackageReference Include="FluentResults" Version="3.16.0" />
     </ItemGroup>
-    
+
     <!-- User/Mod Settings -->
     <PropertyGroup>
+        <GameExecutablePath>E:\Program Files (x86)\Steam\steamapps\common\Barotrauma\Barotrauma.exe</GameExecutablePath>
         <!-- IMPORTANT: Should point to <Barotrauma_Install>\LocalMods\<MyModName>\ -->
         <!-- IMPORTANT: ModDeplyDir Path must end with '\' -->
-        <BarotraumaExecutableFilePath>E:\Program Files (x86)\Steam\steamapps\common\Barotrauma\Barotrauma.exe</BarotraumaExecutableFilePath>
         <ModDeployDir>H:\Source\Barotrauma\LocalMods\ShadowCulling</ModDeployDir>
         <!-- IMPORTANT: Avoid the use of special (IE: / : ; , \ < > ?) (periods "." are good) and non-english characters in the AssemblyName and RootNamespace.-->
         <!-- You must also change the assembly.dll name in ModConfig.xml to match the AssemblyName. -->
