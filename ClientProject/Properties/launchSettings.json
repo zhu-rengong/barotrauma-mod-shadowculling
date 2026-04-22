@@ -5,7 +5,7 @@
     },
     "Launch Barotrauma": {
       "commandName": "Executable",
-      "executablePath": "$(GameExecutablePath)"
+      "executablePath": "$(GameExecutableDir)Barotrauma.exe"
     }
   }
 }

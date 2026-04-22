@@ -2,19 +2,19 @@
     <ItemGroup>
         <!-- /Refs Path References-->
         <Reference Include="Farseer.NetStandard">
-            <HintPath>..\Refs\Farseer.NetStandard.dll</HintPath>
+            <HintPath>$(RefsPath)\Farseer.NetStandard.dll</HintPath>
         </Reference>
         <Reference Include="Lidgren.NetStandard">
-            <HintPath>..\Refs\Lidgren.NetStandard.dll</HintPath>
+            <HintPath>$(RefsPath)\Lidgren.NetStandard.dll</HintPath>
         </Reference>
         <Reference Include="Mono.Cecil">
-            <HintPath>..\Refs\Mono.Cecil.dll</HintPath>
+            <HintPath>$(RefsPath)\Mono.Cecil.dll</HintPath>
         </Reference>
         <Reference Include="MoonSharp.Interpreter">
-            <HintPath>..\Refs\MoonSharp.Interpreter.dll</HintPath>
+            <HintPath>$(RefsPath)\MoonSharp.Interpreter.dll</HintPath>
         </Reference>
         <Reference Include="XNATypes">
-            <HintPath>..\Refs\XNATypes.dll</HintPath>
+            <HintPath>$(RefsPath)\XNATypes.dll</HintPath>
         </Reference>
 
         <!-- Luatrauuma NuGet Package References -->
@@ -26,10 +26,6 @@
 
     <!-- User/Mod Settings -->
     <PropertyGroup>
-        <GameExecutablePath>E:\Program Files (x86)\Steam\steamapps\common\Barotrauma\Barotrauma.exe</GameExecutablePath>
-        <!-- IMPORTANT: Should point to <Barotrauma_Install>\LocalMods\<MyModName>\ -->
-        <!-- IMPORTANT: ModDeplyDir Path must end with '\' -->
-        <ModDeployDir>H:\Source\Barotrauma\LocalMods\ShadowCulling</ModDeployDir>
         <!-- IMPORTANT: Avoid the use of special (IE: / : ; , \ < > ?) (periods "." are good) and non-english characters in the AssemblyName and RootNamespace.-->
         <!-- You must also change the assembly.dll name in ModConfig.xml to match the AssemblyName. -->
         <AssemblyName>ShadowCulling</AssemblyName>

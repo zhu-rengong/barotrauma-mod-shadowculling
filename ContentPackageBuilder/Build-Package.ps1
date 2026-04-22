@@ -15,7 +15,8 @@ $config = [BuildConfiguration]::Release
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent $scriptDir
 $srcDir = Join-Path $scriptDir "Content"
-$propsPath = Join-Path $repoRoot "Build.props"
+$binaryDir = Join-Path $srcDir "bin"
+$userPropsPath = Join-Path $repoRoot "UserBuildData.props"
 
 $projects = @(
     @{ Path = "ClientProject\WindowsClient.csproj"; Runtime = "win-x64"; Target = [BuildTarget]::Client },
@@ -55,8 +56,8 @@ if ($projects.Count -gt 0) {
     }
 }
 
-if (Test-Path $propsPath) {
-    [xml]$xml = Get-Content $propsPath
+if (Test-Path $userPropsPath) {
+    [xml]$xml = Get-Content $userPropsPath
     $destDir = (Select-Xml -Xml $xml -XPath "//ModDeployDir").Node.InnerText
     if (-not $destDir) {
         Write-Host "Error: ModDeployDir not found in Build.props" -ForegroundColor Red
@@ -64,7 +65,7 @@ if (Test-Path $propsPath) {
     }
 }
 else {
-    Write-Host "Error: Build.props not found at $propsPath" -ForegroundColor Red
+    Write-Host "Error: Build.props not found at $userPropsPath" -ForegroundColor Red
     exit 1
 }
 
@@ -73,6 +74,10 @@ Write-Host "Source : $srcDir"
 Write-Host "Target : $destDir`n"
 
 $listArgs = @($srcDir, $destDir, "/E", "/L", "/NP", "/NDL", "/NC", "/NJH", "/NJS")
+$excludeBinary = (Read-Host "Do you want to exclude binary files? (Y/N)") -in @("Y", "y")
+if ($excludeBinary) {
+    $listArgs += @("/XD", $binaryDir)
+}
 $out = robocopy @listArgs 2>&1
 
 $files = $out | Where-Object { $_ -match "^\s{1,}\d+\s" }
@@ -94,6 +99,9 @@ if ($confirmSync -notin @("Y", "y")) {
 
 Write-Host "`nSyncing..." -ForegroundColor Green
 $syncArgs = @($srcDir, $destDir, "/E", "/MIR", "/R:3", "/W:1")
+if ($excludeBinary) {
+    $syncArgs += @("/XD", $binaryDir)
+}
 robocopy @syncArgs | Out-Null
 $exitCode = $LASTEXITCODE
 

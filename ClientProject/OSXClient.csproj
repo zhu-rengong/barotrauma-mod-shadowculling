@@ -1,18 +1,19 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\SharedProject\SharedProject.projitems" Label="Shared" />
+  <Import Project="../UserBuildData.props" />
+  <Import Project="../Build.props" />
+
   <ItemGroup>
     <Reference Include="Barotrauma">
-      <HintPath>..\Refs\OSX\Barotrauma.dll</HintPath>
+      <HintPath>$(RefsPath)\OSX\Barotrauma.dll</HintPath>
     </Reference>
     <Reference Include="BarotraumaCore">
-      <HintPath>..\Refs\OSX\BarotraumaCore.dll</HintPath>
+      <HintPath>$(RefsPath)\OSX\BarotraumaCore.dll</HintPath>
     </Reference>
     <Reference Include="MonoGame.Framework.MacOS.NetStandard">
-      <HintPath>..\Refs\MonoGame.Framework.MacOS.NetStandard.dll</HintPath>
+      <HintPath>$(RefsPath)\MonoGame.Framework.MacOS.NetStandard.dll</HintPath>
     </Reference>
   </ItemGroup>
-
-  <Import Project="..\SharedProject\SharedProject.projitems" Label="Shared" />
-  <Import Project="../Build.props" />
 
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
     <DefineConstants>TRACE;OSX;CLIENT</DefineConstants>

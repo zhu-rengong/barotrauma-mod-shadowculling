@@ -1,18 +1,19 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\SharedProject\SharedProject.projitems" Label="Shared" />
+  <Import Project="../UserBuildData.props" />
+  <Import Project="../Build.props" />
+
   <ItemGroup>
     <Reference Include="Barotrauma">
-      <HintPath>..\Refs\Linux\Barotrauma.dll</HintPath>
+      <HintPath>$(RefsPath)\Linux\Barotrauma.dll</HintPath>
     </Reference>
     <Reference Include="BarotraumaCore">
-      <HintPath>..\Refs\Linux\BarotraumaCore.dll</HintPath>
+      <HintPath>$(RefsPath)\Linux\BarotraumaCore.dll</HintPath>
     </Reference>
     <Reference Include="MonoGame.Framework.Linux.NetStandard">
-      <HintPath>..\Refs\MonoGame.Framework.Linux.NetStandard.dll</HintPath>
+      <HintPath>$(RefsPath)\MonoGame.Framework.Linux.NetStandard.dll</HintPath>
     </Reference>
   </ItemGroup>
-
-  <Import Project="..\SharedProject\SharedProject.projitems" Label="Shared" />
-  <Import Project="../Build.props" />
 
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
     <DefineConstants>TRACE;LINUX;CLIENT</DefineConstants>

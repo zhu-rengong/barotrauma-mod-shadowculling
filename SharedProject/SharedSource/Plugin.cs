@@ -16,6 +16,7 @@ public partial class Plugin : IAssemblyPlugin
 
     public Harmony? harmony;
 
+    [MethodImpl(MethodImplOptions.NoOptimization)]
     public void Initialize()
     {
         // When your plugin is loading, use this instead of the constructor for code relying on
@@ -38,17 +39,20 @@ public partial class Plugin : IAssemblyPlugin
 
     public partial void InitializeProjectSpecific();
 
+    [MethodImpl(MethodImplOptions.NoOptimization)]
     public void OnLoadCompleted()
     {
         // After all plugins have loaded
         // Put code that interacts with other plugins here.
     }
 
+    [MethodImpl(MethodImplOptions.NoOptimization)]
     public void PreInitPatching()
     {
         // Called right after the constructor
     }
 
+    [MethodImpl(MethodImplOptions.NoOptimization)]
     public void Dispose()
     {
         // Cleanup your plugin!
