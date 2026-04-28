@@ -47,10 +47,6 @@ public struct Segment
     {
         Start = start;
         End = end;
-        StartToEnd = default;
-        Center = default;
-        LengthSquared = default;
-        Length = default;
         CalculateProperties();
     }
 
@@ -421,7 +417,6 @@ public class RayRange
         Origin = origin;
         Start = new(origin, startDirection);
         End = new(origin, endDirection);
-        RayScanDir = default;
         CalculateProperties();
     }
 
@@ -459,6 +454,8 @@ public struct Shadow
     public Ray Ray1;
     public Ray Ray2;
     public float RayScanDir;
+    public float DistanceToView;
+    public Quadrant OccluderQuadrants;
     private int _hashCode;
 
     /// <summary>
@@ -475,7 +472,6 @@ public struct Shadow
         Occluder = new(vertex1, vertex2);
         Ray1 = new(vertex1, vertex1 - lightSource);
         Ray2 = new(vertex2, vertex2 - lightSource);
-        RayScanDir = default;
         CalculateProperties();
     }
 
