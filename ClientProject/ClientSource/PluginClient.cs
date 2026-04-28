@@ -1,6 +1,7 @@
 ﻿using Barotrauma.Items.Components;
 using ShadowCulling.Geometry;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using ConvexHull = Barotrauma.Lights.ConvexHull;
 using ConvexHullList = Barotrauma.Lights.ConvexHullList;
 using LightManager = Barotrauma.Lights.LightManager;
@@ -209,8 +210,6 @@ public partial class Plugin
         validShadowNumber = 0;
         Rectangle cameraViewBounds = camera.WorldView;
 
-        shadowIndexLinkedList.Clear();
-
         foreach (ConvexHullList hullList in ConvexHull.HullLists)
         {
             foreach (ConvexHull convexHull in hullList.List)
@@ -298,11 +297,13 @@ public partial class Plugin
                 }
                 shadow.OccluderQuadrants = occluderQuadrant;
 
-                shadowIndexLinkedList.AddLast(validShadowNumber);
-
                 validShadowNumber++;
             }
         }
+
+        CollectionsMarshal.SetCount(sortedShadowIndices, validShadowNumber);
+        Span<int> indices = CollectionsMarshal.AsSpan(sortedShadowIndices);
+        for (int i = 0; i < validShadowNumber; i++) { indices[i] = i; }
     }
 
     /// <summary>
@@ -312,8 +313,6 @@ public partial class Plugin
     {
         // Use nearer convex hulls to prioritize determining whether farther ones are in shadow,
         // this can significantly improve the hit rate of prediction.
-        sortedShadowIndices.Clear();
-        sortedShadowIndices.AddRange(shadowIndexLinkedList);
         sortedShadowIndices.Sort((s1, s2) => validShadowBuffer[s1].DistanceToView.CompareTo(validShadowBuffer[s2].DistanceToView));
 
         shadowIndexLinkedList.Clear();
