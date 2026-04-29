@@ -1,4 +1,4 @@
 ﻿<?xml version="1.0" encoding="UTF-8"?>
-<contentpackage name="ShadowCulling" steamworkshopid="3621263586" corepackage="false" modversion="2.6.1" gameversion="1.12.6.2">
+<contentpackage name="ShadowCulling" steamworkshopid="3621263586" corepackage="false" modversion="2.6.2" gameversion="1.12.6.2">
     <Text file="%ModDir%/Texts/English.xml" />
 </contentpackage>

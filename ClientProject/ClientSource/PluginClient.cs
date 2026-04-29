@@ -23,11 +23,12 @@ public partial class Plugin
     private static double lastPerformanceLogTime;
 
     // Shadow data buffers
-    private static Shadow[] validShadowBuffer = new Shadow[1024];
-    private static LinkedList<int> shadowIndexLinkedList = new();
+    private static Shadow[] validShadowBuffer = new Shadow[512];
+    private static int[] integerRangeBuffer = Enumerable.Range(0, validShadowBuffer.Length).ToArray();
+    private static PooledLinkedList<int> shadowIndexLinkedList = new();
     private static Dictionary<Quadrant, RayRange> quadrants = new(4);
     private static List<int> sortedShadowIndices = new(1024);
-    private static LinkedList<Segment> shadowClippingOccluders = new();
+    private static PooledLinkedList<Segment> shadowClippingOccluders = new();
     private static HashSet<int> predictableOccluderStart = new(1024);
     private static HashSet<int> predictableOccluderEnd = new(1024);
 
@@ -46,7 +47,7 @@ public partial class Plugin
     private static Vector2? previousViewInterpolatedPosition;
 
     // Object pooling for performance
-    private static ObjectPool<LinkedList<Segment>> segmentListPool = new(() => new());
+    private static ObjectPool<PooledLinkedList<Segment>> segmentListPool = new(() => new());
 
     // Parallel processing configuration
     private static ParallelOptions cullingParallelOptions = new() { MaxDegreeOfParallelism = ParallelismLevel };
@@ -254,7 +255,8 @@ public partial class Plugin
                 // Ensures the shadow buffer has enough capacity.
                 if (validShadowNumber >= validShadowBuffer.Length)
                 {
-                    Array.Resize(ref validShadowBuffer, validShadowBuffer.Length + 1024);
+                    Array.Resize(ref validShadowBuffer, validShadowBuffer.Length + 128);
+                    EnsureIntRangeCapacity(validShadowBuffer.Length);
                 }
 
                 validShadowBuffer[validShadowNumber] = new(
@@ -302,8 +304,22 @@ public partial class Plugin
         }
 
         CollectionsMarshal.SetCount(sortedShadowIndices, validShadowNumber);
-        Span<int> indices = CollectionsMarshal.AsSpan(sortedShadowIndices);
-        for (int i = 0; i < validShadowNumber; i++) { indices[i] = i; }
+        integerRangeBuffer.AsSpan()
+            .Slice(0, validShadowNumber)
+            .CopyTo(CollectionsMarshal.AsSpan(sortedShadowIndices));
+    }
+
+    private static void EnsureIntRangeCapacity(int capacity)
+    {
+        int sizeBeforeResize = integerRangeBuffer.Length;
+        if (sizeBeforeResize < capacity)
+        {
+            Array.Resize(ref integerRangeBuffer, capacity);
+            for (int i = sizeBeforeResize; i < capacity; i++)
+            {
+                integerRangeBuffer[i] = i;
+            }
+        }
     }
 
     /// <summary>
@@ -315,19 +331,18 @@ public partial class Plugin
         // this can significantly improve the hit rate of prediction.
         sortedShadowIndices.Sort((s1, s2) => validShadowBuffer[s1].DistanceToView.CompareTo(validShadowBuffer[s2].DistanceToView));
 
-        shadowIndexLinkedList.Clear();
+        shadowIndexLinkedList.Clear(returnNode: true);
         foreach (int index in sortedShadowIndices)
         {
             shadowIndexLinkedList.AddLast(index);
         }
 
         Span<Segment> clipBuffer = stackalloc Segment[3];
-        LinkedListNode<int>? currentShadowNode = shadowIndexLinkedList.Last;
+        PooledLinkedListNode<int>? currentShadowNode = shadowIndexLinkedList.Last;
 
         while (currentShadowNode != null)
         {
             var previousShadowNode = currentShadowNode.Previous;
-            var nextShadowNode = currentShadowNode.Next;
             int currentShadowIndex = currentShadowNode.Value;
             ref readonly Shadow currentShadow = ref validShadowBuffer[currentShadowIndex];
             ref readonly Segment entireOccluder = ref currentShadow.Occluder;
@@ -343,7 +358,7 @@ public partial class Plugin
 
                 if (!quadrants.HasAnyFlag(otherShadow.OccluderQuadrants)) { continue; }
 
-                LinkedListNode<Segment>? clipNode = shadowClippingOccluders.First;
+                PooledLinkedListNode<Segment>? clipNode = shadowClippingOccluders.First;
                 if (clipNode == null) { break; }
 
                 do
@@ -358,7 +373,7 @@ public partial class Plugin
                         {
                             shadowClippingOccluders.AddBefore(clipNode, clipBuffer[clipIndex]);
                         }
-                        shadowClippingOccluders.Remove(clipNode);
+                        shadowClippingOccluders.Remove(clipNode, returnNode: true);
                     }
                     clipNode = nextClipNode;
                 } while (clipNode != null);
@@ -372,18 +387,17 @@ public partial class Plugin
                 {
                     shadowIndexLinkedList.AddAfter(previousShadowNode, currentShadowNode);
                 }
-                else if (nextShadowNode != null)
-                {
-                    shadowIndexLinkedList.AddBefore(nextShadowNode, currentShadowNode);
-                }
                 else
                 {
-                    // Should never happen
-                    shadowIndexLinkedList.AddLast(currentShadowNode);
+                    shadowIndexLinkedList.AddFirst(currentShadowNode);
                 }
             }
+            else
+            {
+                shadowIndexLinkedList.ReturnNode(currentShadowNode);
+            }
 
-            shadowClippingOccluders.Clear();
+            shadowClippingOccluders.Clear(returnNode: true);
             currentShadowNode = previousShadowNode;
         }
 
@@ -568,7 +582,7 @@ public partial class Plugin
     {
         Span<Segment> entityEdges = stackalloc Segment[8];
         Span<Segment> edgeClipBuffer = stackalloc Segment[3];
-        LinkedList<Segment> clippingEdges = segmentListPool.Get();
+        PooledLinkedList<Segment> clippingEdges = segmentListPool.Get();
         int entitiesCulled = 0;
 
         for (int index = fromInclusive; index < toExclusive; index++)
@@ -732,9 +746,8 @@ public partial class Plugin
                     ref readonly Shadow shadow = ref validShadowBuffer[shadowIndex];
                     if (!entityQuadrant.HasAnyFlag(shadow.OccluderQuadrants)) { continue; }
 
-                    LinkedListNode<Segment>? clipNode = clippingEdges.First;
+                    PooledLinkedListNode<Segment>? clipNode = clippingEdges.First;
                     if (clipNode == null) { break; }
-
 
                     do
                     {
@@ -747,7 +760,7 @@ public partial class Plugin
                             {
                                 clippingEdges.AddBefore(clipNode, edgeClipBuffer[clipIndex]);
                             }
-                            clippingEdges.Remove(clipNode);
+                            clippingEdges.Remove(clipNode, returnNode: true);
                         }
                         clipNode = nextClipNode;
                     } while (clipNode != null);
@@ -755,7 +768,7 @@ public partial class Plugin
 
                 bool refuseCulling = clippingEdges.Count > 0;
 
-                clippingEdges.Clear();
+                clippingEdges.Clear(returnNode: true);
 
                 if (refuseCulling)
                 {
