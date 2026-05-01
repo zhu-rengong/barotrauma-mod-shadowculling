@@ -1,0 +1,32 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<infotexts language="English" nowhitespace="false" translatedname="English">
+  <shadowculling.cullingenabled.displayname>Shadow Enable Culling</shadowculling.cullingenabled.displayname>
+  <shadowculling.cullingenabled.tooltip>When enabled, game entities such as items, structures, and characters that are completely occluded by shadows will not be rendered, resulting in significant performance improvements in complex scenes. (Only takes effect when LOS is enabled.)</shadowculling.cullingenabled.tooltip>
+
+  <shadowculling.cullinginterval.displayname>Shadow Culling Interval</shadowculling.cullinginterval.displayname>
+  <shadowculling.cullinginterval.tooltip>Higher values improve performance but may cause 'flickering' as entities are not culled in time. 0.05s is recommended.</shadowculling.cullinginterval.tooltip>
+
+  <shadowculling.debugloggingenabled.displayname>Enable Debug Logging</shadowculling.debugloggingenabled.displayname>
+  <shadowculling.debugloggingenabled.tooltip>Is debug logging enabled?</shadowculling.debugloggingenabled.tooltip>
+
+  <shadowculling.debugdrawingenabled.displayname>Enable Debug Drawing</shadowculling.debugdrawingenabled.displayname>
+  <shadowculling.debugdrawingenabled.tooltip>Master toggle for all shadow culling debug visualizations. When disabled, none of the individual debug drawing options will be visible.</shadowculling.debugdrawingenabled.tooltip>
+
+  <shadowculling.debugdrawinghull.displayname>Draw Culling Hulls</shadowculling.debugdrawinghull.displayname>
+  <shadowculling.debugdrawinghull.tooltip>Visualize the hulls used to check shadow occluder.</shadowculling.debugdrawinghull.tooltip>
+
+  <shadowculling.debugdrawingshadow.displayname>Draw Shadow Casters</shadowculling.debugdrawingshadow.displayname>
+  <shadowculling.debugdrawingshadow.tooltip>Visualize the shadow-casting geometry (light source direction lines) that drives the occlusion calculation.</shadowculling.debugdrawingshadow.tooltip>
+
+  <shadowculling.debugdrawingshadowlength.displayname>Draw Shadow Length Limits</shadowculling.debugdrawingshadowlength.displayname>
+  <shadowculling.debugdrawingshadowlength.tooltip></shadowculling.debugdrawingshadowlength.tooltip>
+
+  <shadowculling.debugdrawingitem.displayname>Draw Item Bounds</shadowculling.debugdrawingitem.displayname>
+  <shadowculling.debugdrawingitem.tooltip>Show bounding boxes of items and their culling status (visible/culled). light indicates rendered; dim culled by shadow.</shadowculling.debugdrawingitem.tooltip>
+
+  <shadowculling.debugdrawingstructure.displayname>Draw Structure Bounds</shadowculling.debugdrawingstructure.displayname>
+  <shadowculling.debugdrawingstructure.tooltip>Show bounding boxes of structures and their culling status (visible/culled). light indicates rendered; dim culled by shadow.</shadowculling.debugdrawingstructure.tooltip>
+
+  <shadowculling.debugdrawingcharacter.displayname>Draw Character Bounds</shadowculling.debugdrawingcharacter.displayname>
+  <shadowculling.debugdrawingcharacter.tooltip>Show bounding boxes of characters (NPCs, creatures) and their culling status (visible/culled). light indicates rendered; dim culled by shadow.</shadowculling.debugdrawingcharacter.tooltip>
+</infotexts>

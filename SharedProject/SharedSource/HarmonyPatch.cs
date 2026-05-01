@@ -1,9 +1,5 @@
 ﻿using HarmonyLib;
-using Barotrauma;
-using Microsoft.Xna.Framework;
-using Barotrauma.Plugins;
 using Barotrauma.Items.Components;
-using FarseerPhysics;
 using Microsoft.Xna.Framework.Graphics;
 using Barotrauma.Lights;
 using ShadowCulling.Geometry;
@@ -182,7 +178,7 @@ public static class HarmonyPatch
             {
                 RectangleF worldRect = hull.WorldRect;
                 Color hullColor = Plugin.IsEntityCulled.TryGetValue(hull, out bool _)
-                    ? new Color(Color.MediumPurple, 0.5f)
+                    ? new Color(Color.MediumPurple, 0.2f)
                     : Color.MediumPurple;
 
                 GUI.DrawRectangle(

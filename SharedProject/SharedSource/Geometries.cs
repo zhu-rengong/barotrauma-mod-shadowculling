@@ -28,7 +28,7 @@ public enum Quadrant
 /// <summary>
 /// Represents a 2D line segment with intersection and clipping capabilities.
 /// </summary>
-public struct Segment
+public struct Segment : IEquatable<Segment>
 {
     public Vector2 Start;
     public Vector2 End;
@@ -47,10 +47,6 @@ public struct Segment
     {
         Start = start;
         End = end;
-        StartToEnd = default;
-        Center = default;
-        LengthSquared = default;
-        Length = default;
         CalculateProperties();
     }
 
@@ -74,12 +70,12 @@ public struct Segment
     /// <param name="intersection">The intersection point if found.</param>
     /// <returns>True if an intersection exists, false otherwise.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool TryGetIntersection(in Ray ray, ref Vector2 intersection)
+    public bool TryGetIntersection(in Ray ray, ref Vector2 intersection, out float denominator)
     {
         ref readonly Vector2 rayOrigin = ref ray.Origin;
         ref readonly Vector2 rayDirection = ref ray.Direction;
 
-        float denominator = StartToEnd.CrossProduct(rayDirection);
+        denominator = StartToEnd.CrossProduct(rayDirection);
 
         // Segment and ray are collinear
         if (Math.Abs(denominator) < 1e-4f) { return false; }
@@ -109,7 +105,7 @@ public struct Segment
     public bool IntersectWith(in Ray ray)
     {
         Vector2 intersection = default;
-        return TryGetIntersection(ray, ref intersection);
+        return TryGetIntersection(ray, ref intersection, out _);
     }
 
     /// <summary>
@@ -119,12 +115,12 @@ public struct Segment
     /// <param name="intersection">The intersection point if found.</param>
     /// <returns>True if an intersection exists, false otherwise.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool TryGetIntersection(in Segment other, ref Vector2 intersection)
+    public bool TryGetIntersection(in Segment other, ref Vector2 intersection, out float denominator)
     {
         ref readonly Vector2 otherStart = ref other.Start;
         ref readonly Vector2 otherStartToEnd = ref other.StartToEnd;
 
-        float denominator = StartToEnd.CrossProduct(otherStartToEnd);
+        denominator = StartToEnd.CrossProduct(otherStartToEnd);
 
         if (Math.Abs(denominator) < 1e-4f) { return false; }
 
@@ -146,7 +142,7 @@ public struct Segment
     public bool IntersectWith(in Segment other)
     {
         Vector2 intersection = default;
-        return TryGetIntersection(other, ref intersection);
+        return TryGetIntersection(other, ref intersection, out _);
     }
 
     /// <summary>
@@ -171,12 +167,12 @@ public struct Segment
         ref readonly Ray ray1 = ref shadow.Ray1;
         ref readonly Ray ray2 = ref shadow.Ray2;
 
-        if (TryGetIntersection(occluder, ref intersection))
+        if (TryGetIntersection(occluder, ref intersection, out float crossWithOccluder))
         {
-            float cross = StartToEnd.CrossProduct(occluderStartToEnd);
-            if (Math.Abs(cross) >= 1e-4f)
+            ;
+            if (Math.Abs(crossWithOccluder) >= 1e-4f)
             {
-                Segment newClip = new(intersection, cross * scanDirection > 0.0f ? Start : End);
+                Segment newClip = new(intersection, crossWithOccluder * scanDirection > 0.0f ? Start : End);
                 if (newClip.StartToEnd != Vector2.Zero)
                 {
                     clips[clipCount++] = newClip;
@@ -184,12 +180,11 @@ public struct Segment
             }
         }
 
-        if (TryGetIntersection(ray1, ref intersection))
+        if (TryGetIntersection(ray1, ref intersection, out float crossWithRay1))
         {
-            float cross = StartToEnd.CrossProduct(ray1.Direction);
-            if (Math.Abs(cross) >= 1e-4f)
+            if (Math.Abs(crossWithRay1) >= 1e-4f)
             {
-                Segment newClip = new(intersection, cross * scanDirection < 0.0f ? Start : End);
+                Segment newClip = new(intersection, crossWithRay1 * scanDirection < 0.0f ? Start : End);
                 if (newClip.StartToEnd != Vector2.Zero)
                 {
                     clips[clipCount++] = newClip;
@@ -197,12 +192,11 @@ public struct Segment
             }
         }
 
-        if (TryGetIntersection(ray2, ref intersection))
+        if (TryGetIntersection(ray2, ref intersection, out float crossWithRay2))
         {
-            float cross = StartToEnd.CrossProduct(ray2.Direction);
-            if (Math.Abs(cross) >= 1e-4f)
+            if (Math.Abs(crossWithRay2) >= 1e-4f)
             {
-                Segment newClip = new(intersection, cross * scanDirection > 0.0f ? Start : End);
+                Segment newClip = new(intersection, crossWithRay2 * scanDirection > 0.0f ? Start : End);
                 if (newClip.StartToEnd != Vector2.Zero)
                 {
                     clips[clipCount++] = newClip;
@@ -244,12 +238,11 @@ public struct Segment
         ref readonly Ray startRay = ref rayRange.Start;
         ref readonly Ray endRay = ref rayRange.End;
 
-        if (TryGetIntersection(startRay, ref intersection))
+        if (TryGetIntersection(startRay, ref intersection, out float crossWithStartRay))
         {
-            float cross = StartToEnd.CrossProduct(startRay.Direction);
-            if (Math.Abs(cross) >= 1e-4f)
+            if (Math.Abs(crossWithStartRay) >= 1e-4f)
             {
-                Segment newClip = new(intersection, cross * scanDirection < 0.0f ? Start : End);
+                Segment newClip = new(intersection, crossWithStartRay * scanDirection < 0.0f ? Start : End);
                 if (newClip.StartToEnd != Vector2.Zero)
                 {
                     clips[clipCount++] = newClip;
@@ -257,12 +250,11 @@ public struct Segment
             }
         }
 
-        if (TryGetIntersection(endRay, ref intersection))
+        if (TryGetIntersection(endRay, ref intersection, out float crossWithEndRay))
         {
-            float cross = StartToEnd.CrossProduct(endRay.Direction);
-            if (Math.Abs(cross) >= 1e-4f)
+            if (Math.Abs(crossWithEndRay) >= 1e-4f)
             {
-                Segment newClip = new(intersection, cross * scanDirection > 0.0f ? Start : End);
+                Segment newClip = new(intersection, crossWithEndRay * scanDirection > 0.0f ? Start : End);
                 if (newClip.StartToEnd != Vector2.Zero)
                 {
                     clips[clipCount++] = newClip;
@@ -296,14 +288,14 @@ public struct Segment
         float scanDirection = rayRange.RayScanDir;
         if (Math.Abs(scanDirection) < 1e-4f)
         {
-            return TryGetIntersection(startRay, ref intersection);
+            return TryGetIntersection(startRay, ref intersection, out _);
         }
 
-        if (TryGetIntersection(startRay, ref intersection)) { return true; }
+        if (TryGetIntersection(startRay, ref intersection, out _)) { return true; }
 
         ref readonly Ray endRay = ref rayRange.End;
 
-        if (TryGetIntersection(endRay, ref intersection)) { return true; }
+        if (TryGetIntersection(endRay, ref intersection, out _)) { return true; }
 
         Vector2 originToSegment = Start - rayRange.Origin;
         return originToSegment.CrossProduct(startRay.Direction) * scanDirection <= 0
@@ -350,12 +342,9 @@ public struct Segment
         return _hashCode;
     }
 
-    public override bool Equals(object? obj)
-    {
-        return obj is Segment other &&
-               ((Start.Equals(other.Start) && End.Equals(other.End))
-                || (Start.Equals(other.End) && End.Equals(other.Start)));
-    }
+    public override bool Equals(object? obj) => obj is Segment other && this == other;
+
+    public bool Equals(Segment other) => (Start.Equals(other.Start) && End.Equals(other.End)) || (Start.Equals(other.End) && End.Equals(other.Start));
 
     public static bool operator ==(in Segment left, in Segment right)
     {
@@ -421,7 +410,6 @@ public class RayRange
         Origin = origin;
         Start = new(origin, startDirection);
         End = new(origin, endDirection);
-        RayScanDir = default;
         CalculateProperties();
     }
 
@@ -451,7 +439,7 @@ public class RayRange
 /// <summary>
 /// Represents a shadow cast by a convex hull from a light source.
 /// </summary>
-public struct Shadow
+public struct Shadow : IEquatable<Shadow>
 {
     public readonly ConvexHull ConvexHull;
     public Vector2 LightSource;
@@ -459,6 +447,8 @@ public struct Shadow
     public Ray Ray1;
     public Ray Ray2;
     public float RayScanDir;
+    public float DistanceToView;
+    public Quadrant OccluderQuadrants;
     private int _hashCode;
 
     /// <summary>
@@ -475,7 +465,6 @@ public struct Shadow
         Occluder = new(vertex1, vertex2);
         Ray1 = new(vertex1, vertex1 - lightSource);
         Ray2 = new(vertex2, vertex2 - lightSource);
-        RayScanDir = default;
         CalculateProperties();
     }
 
@@ -525,12 +514,9 @@ public struct Shadow
         return _hashCode;
     }
 
-    public override bool Equals(object? obj)
-    {
-        return obj is Shadow other &&
-               LightSource.Equals(other.LightSource) &&
-               Occluder.Equals(other.Occluder);
-    }
+    public override bool Equals(object? obj) => obj is Shadow other && this == other;
+
+    public bool Equals(Shadow other) => LightSource == other.LightSource && Occluder == other.Occluder;
 
     public static bool operator ==(in Shadow left, in Shadow right)
     {

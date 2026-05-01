@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <DefineConstants>$(DefineConstants);CLIENT</DefineConstants>
     <BuildTarget>Client</BuildTarget>
-    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
   <Import Project="..\BuildData.props" />
@@ -24,9 +24,7 @@
       <FilesToCopy Include="$(TargetDir)$(TargetName).deps.json" />
       <FilesToCopy Include="$(TargetDir)$(TargetName).pdb" />
     </ItemGroup>
-
-    <Copy SourceFiles="@(FilesToCopy)" DestinationFolder="$(ModDeployDir)\$(PlatformName)" />
+    <Copy SourceFiles="@(FilesToCopy)" DestinationFolder="$(MSBuildThisFileDirectory)..\ContentPackageBuilder\Content\bin\$(PlatformName)" />
   </Target>
 
-  <Import Project="..\CopyOtherFiles.props" />
 </Project>

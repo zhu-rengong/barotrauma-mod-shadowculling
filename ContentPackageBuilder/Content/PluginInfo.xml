@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PluginInfos notsyncedinmultiplayer="true">
+  <MainAssemblyInfo assemblypath="%ModDir%/bin/Windows/ShadowCullingClient.dll" platforms="Windows" targets="Client" />
+  <MainAssemblyInfo assemblypath="%ModDir%/bin/Linux/ShadowCullingClient.dll" platforms="Linux" targets="Client" />
+  <MainAssemblyInfo assemblypath="%ModDir%/bin/Mac/ShadowCullingClient.dll" platforms="Mac" targets="Client" />
+</PluginInfos>

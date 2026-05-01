@@ -11,10 +11,6 @@
     <PackageReference Include="System.Collections.Immutable" Version="9.0.0" />
     <PackageReference Include="Barotrauma.ReferenceAssemblies.Libraries" Version="*" />
     <PackageReference Include="HarmonyX" Version="2.15.0" />
-
-    <ProjectReference Include="..\ContentPackageBuilder\ContentPackageBuilder.csproj">
-      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
-    </ProjectReference>
   </ItemGroup>
 
   <Import Project="..\References.props" />

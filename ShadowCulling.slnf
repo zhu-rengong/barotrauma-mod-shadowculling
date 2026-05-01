@@ -1,0 +1,9 @@
+{
+  "solution": {
+    "path": "ShadowCulling.sln",
+    "projects": [
+      "ClientProject\\WindowsClient.csproj",
+      "SharedProject\\SharedSource.shproj"
+    ]
+  }
+}
