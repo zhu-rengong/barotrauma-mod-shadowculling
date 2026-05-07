@@ -1,7 +1,7 @@
-﻿using HarmonyLib;
-using Barotrauma.Items.Components;
-using Microsoft.Xna.Framework.Graphics;
+﻿using Barotrauma.Items.Components;
 using Barotrauma.Lights;
+using HarmonyLib;
+using Microsoft.Xna.Framework.Graphics;
 using ShadowCulling.Geometry;
 
 namespace ShadowCulling;
@@ -61,57 +61,28 @@ public static class HarmonyPatch
 
     #region Rendering Patches
 
-    [HarmonyLib.HarmonyPatch(
-        declaringType: typeof(Submarine),
-        methodName: nameof(Submarine.DrawBack)
-    )]
-    private static class Submarine_DrawBack
-    {
-        static void Prefix(ref Predicate<MapEntity>? predicate)
-        {
-            if (Plugin.DisallowCulling) { return; }
 
+    [HarmonyLib.HarmonyPatch(typeof(Submarine), nameof(Submarine.DrawBack)), HarmonyPrefix]
+    static void Submarine_DrawBack_Prefix(ref Predicate<MapEntity>? predicate)
+        => InjectRenderCulling(ref predicate);
+
+    [HarmonyLib.HarmonyPatch(typeof(Submarine), nameof(Submarine.DrawDamageable)), HarmonyPrefix]
+    static void Submarine_DrawDamageable_Prefix(ref Predicate<MapEntity>? predicate)
+        => InjectRenderCulling(ref predicate);
+
+    [HarmonyLib.HarmonyPatch(typeof(Submarine), nameof(Submarine.DrawFront)), HarmonyPrefix]
+    static void Submarine_DrawFront_Prefix(ref Predicate<MapEntity>? predicate)
+        => InjectRenderCulling(ref predicate);
+
+    static void InjectRenderCulling(ref Predicate<MapEntity>? predicate)
+    {
+        if (!Plugin.DisallowCulling)
+        {
             var originalPredicate = predicate;
 
             predicate = originalPredicate == null
-                 ? entity => !Plugin.IsEntityCulled.TryGetValue(entity, out bool _)
-                 : entity => !Plugin.IsEntityCulled.TryGetValue(entity, out bool _) && originalPredicate(entity);
-        }
-    }
-
-    [HarmonyLib.HarmonyPatch(
-        declaringType: typeof(Submarine),
-        methodName: nameof(Submarine.DrawFront)
-    )]
-    private static class Submarine_DrawFront
-    {
-        static void Prefix(ref Predicate<MapEntity>? predicate)
-        {
-            if (Plugin.DisallowCulling) { return; }
-
-            var originalPredicate = predicate;
-
-            predicate = originalPredicate == null
-                 ? entity => !Plugin.IsEntityCulled.TryGetValue(entity, out bool _)
-                 : entity => !Plugin.IsEntityCulled.TryGetValue(entity, out bool _) && originalPredicate(entity);
-        }
-    }
-
-    [HarmonyLib.HarmonyPatch(
-        declaringType: typeof(Submarine),
-        methodName: nameof(Submarine.DrawDamageable)
-    )]
-    private static class Submarine_DrawDamageable
-    {
-        static void Prefix(ref Predicate<MapEntity>? predicate)
-        {
-            if (Plugin.DisallowCulling) { return; }
-
-            var originalPredicate = predicate;
-
-            predicate = originalPredicate == null
-                 ? entity => !Plugin.IsEntityCulled.TryGetValue(entity, out bool _)
-                 : entity => !Plugin.IsEntityCulled.TryGetValue(entity, out bool _) && originalPredicate(entity);
+                 ? entity => !Plugin.IsEntityCulled.GetValue(entity)
+                 : entity => !Plugin.IsEntityCulled.GetValue(entity) && originalPredicate(entity);
         }
     }
 
@@ -126,7 +97,7 @@ public static class HarmonyPatch
     {
         static bool Prefix(Character __instance)
         {
-            return !Plugin.IsEntityCulled.TryGetValue(__instance, out bool _);
+            return !Plugin.IsEntityCulled.GetValue(__instance);
         }
     }
 
@@ -177,7 +148,7 @@ public static class HarmonyPatch
             foreach (Hull hull in Plugin.HullsForCulling)
             {
                 RectangleF worldRect = hull.WorldRect;
-                Color hullColor = Plugin.IsEntityCulled.TryGetValue(hull, out bool _)
+                Color hullColor = Plugin.IsEntityCulled.GetValue(hull)
                     ? new Color(Color.MediumPurple, 0.2f)
                     : Color.MediumPurple;
 
@@ -268,7 +239,7 @@ public static class HarmonyPatch
             entityAABB.Y += entityAABB.Height;
             entityAABB.Offset(item.DrawPosition);
 
-            Color itemColor = Plugin.IsEntityCulled.TryGetValue(item, out bool _)
+            Color itemColor = Plugin.IsEntityCulled.GetValue(item)
                 ? new Color(Color.AntiqueWhite, 0.1f)
                 : new Color(Color.AntiqueWhite, 0.4f);
 
@@ -290,7 +261,7 @@ public static class HarmonyPatch
             RectangleF entityAABB = AABB.CalculateFixed(structure);
             entityAABB.Offset(structure.DrawPosition);
 
-            Color structureColor = Plugin.IsEntityCulled.TryGetValue(structure, out bool _)
+            Color structureColor = Plugin.IsEntityCulled.GetValue(structure)
                 ? new Color(Color.Green, 0.1f)
                 : new Color(Color.Green, 0.4f);
 
@@ -317,7 +288,7 @@ public static class HarmonyPatch
                 }
 
                 RectangleF entityAABB = AABB.CalculateDynamic(character);
-                Color characterColor = Plugin.IsEntityCulled.TryGetValue(character, out bool _)
+                Color characterColor = Plugin.IsEntityCulled.GetValue(character)
                     ? new Color(Color.Red, 0.2f)
                     : Color.Red;
 
