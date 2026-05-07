@@ -10,9 +10,10 @@ namespace ShadowCulling;
 
 public partial class Plugin
 {
-    private const int HullsPerBatch = 15;
-    private const int EntitiesPerBatch = 65;
     private const float ShadowPredictionToleranceMultiplier = 1000.0f;
+
+    private static int PartitionRangeSize => 50;
+    private static int ParallelTolerance => (int)(PartitionRangeSize * 1.5);
     public static int ParallelismLevel => Math.Min(Environment.ProcessorCount, 4);
     public static int ConcurrencyLevel => ParallelismLevel * 3;
 
@@ -41,9 +42,9 @@ public partial class Plugin
     private static bool isCullingStateDirty = false;
 
     // Entity culling state tracking
-    private static ConcurrentDictionary<Entity, RectangleF> entityVisibleExtents = new(ConcurrencyLevel, 32768);
-    private static ConcurrentDictionary<Entity, Hull?> entityHull = new(ConcurrencyLevel, 8192);
-    private static ConcurrentDictionary<Entity, bool> isEntityCulled = new(ConcurrencyLevel, 8192);
+    private static AttachedProperty<RectangleF> entityVisibleExtents = AttachedProperty<RectangleF>.Create();
+    private static AttachedProperty<Hull?> entityHull = AttachedProperty<Hull?>.Create();
+    private static AttachedProperty<bool> isEntityCulled = AttachedProperty<bool>.Create(false);
     private static Vector2? previousViewInterpolatedPosition;
 
     // Object pooling for performance
@@ -56,7 +57,7 @@ public partial class Plugin
     public static Shadow[] ValidShadowBuffer => validShadowBuffer;
     public static List<int> SortedShadowIndices => sortedShadowIndices;
     public static List<Hull> HullsForCulling => hullsForCulling;
-    public static ConcurrentDictionary<Entity, bool> IsEntityCulled => isEntityCulled;
+    public static AttachedProperty<bool> IsEntityCulled => isEntityCulled;
 
     /// <summary>
     /// Determines whether culling should be disabled based on current game state.
@@ -103,7 +104,8 @@ public partial class Plugin
         if (lastCullingUpdateTime <= Timing.TotalTime - CullingInterval)
         {
             cullingPerformanceTimer.Restart();
-            bool success = DoCull(out int validShadowNumber, out int totalHullCulled, out int totalNonHullCulled);
+
+            bool success = DoCull(out int validShadowNumber);
             cullingPerformanceTimer.Stop();
             // Calculate as the average of ticks per frame
             GameMain.PerformanceCounter.AddElapsedTicks("Draw:ShadowCulling", cullingPerformanceTimer.ElapsedTicks / ticksUntilNextCull);
@@ -123,11 +125,9 @@ public partial class Plugin
             lastCullingUpdateTime = Timing.TotalTime;
         }
 
-        bool DoCull(out int validShadowNumber, out int totalHullCulled, out int totalNonHullCulled)
+        bool DoCull(out int validShadowNumber)
         {
             validShadowNumber = 0;
-            totalHullCulled = 0;
-            totalNonHullCulled = 0;
 
             if (!debug && !CullingEnabled) { return false; }
 
@@ -148,7 +148,7 @@ public partial class Plugin
             FilterOutOccludedShadows(viewTargetPosition);
             ApplyShadowPrediction(viewTargetPosition, viewDirection);
 
-            CullEntities(viewTarget, camera, out totalHullCulled, out totalNonHullCulled);
+            CullEntities(viewTarget, camera);
 
             isCullingStateDirty = true;
 
@@ -510,11 +510,12 @@ public partial class Plugin
     /// <summary>
     /// Performs culling on all entities and returns the count of culled entities.
     /// </summary>
-    private static void CullEntities(Entity viewTarget, Camera camera, out int totalHullCulled, out int totalNonHullCulled)
+    private static void CullEntities(Entity viewTarget, Camera camera)
     {
-        int _totalHullCulled = 0;
-        int _totalNonHullCulled = 0;
-        isEntityCulled.Clear();
+        totalHullCulled = 0;
+        totalNonHullCulled = 0;
+
+        isEntityCulled.ResetValues();
 
         hullsForCulling.Clear();
         foreach (Hull hull in Hull.HullList)
@@ -527,58 +528,49 @@ public partial class Plugin
             }
         }
 
-        if (hullsForCulling.Count > HullsPerBatch)
+        if (hullsForCulling.Count > ParallelTolerance)
         {
-            Parallel.For(
-                fromInclusive: 0,
-                toExclusive: (hullsForCulling.Count + HullsPerBatch - 1) / HullsPerBatch,
-                parallelOptions: cullingParallelOptions,
-                body: index =>
-                {
-                    int startIndex = index * HullsPerBatch;
-                    Cull(viewTarget, hullsForCulling, startIndex, Math.Min(startIndex + HullsPerBatch, hullsForCulling.Count), ref _totalHullCulled);
-                }
-            );
+            Partitioner.Create(0, hullsForCulling.Count, PartitionRangeSize)
+                .AsParallel()
+                .WithDegreeOfParallelism(ParallelismLevel)
+                .ForAll(CullHulls);
         }
         else
         {
-            Cull(viewTarget, hullsForCulling, 0, hullsForCulling.Count, ref _totalHullCulled);
+            Cull(hullsForCulling, 0, hullsForCulling.Count, ref totalHullCulled);
         }
 
         entitiesForCulling.Clear();
         entitiesForCulling.AddRange(Submarine.visibleEntities);
 
-        if (entitiesForCulling.Count > EntitiesPerBatch)
+        if (entitiesForCulling.Count > ParallelTolerance)
         {
-            Parallel.For(
-                fromInclusive: 0,
-                toExclusive: (entitiesForCulling.Count + EntitiesPerBatch - 1) / EntitiesPerBatch,
-                parallelOptions: cullingParallelOptions,
-                body: index =>
-                {
-                    int startIndex = index * EntitiesPerBatch;
-                    Cull(viewTarget, entitiesForCulling, startIndex, Math.Min(startIndex + EntitiesPerBatch, entitiesForCulling.Count), ref _totalNonHullCulled);
-                }
-            );
+            Partitioner.Create(0, entitiesForCulling.Count, PartitionRangeSize)
+                .AsParallel()
+                .WithDegreeOfParallelism(ParallelismLevel)
+                .ForAll(CullOtherEntities);
         }
         else
         {
-            Cull(viewTarget, entitiesForCulling, 0, entitiesForCulling.Count, ref _totalNonHullCulled);
+            Cull(entitiesForCulling, 0, entitiesForCulling.Count, ref totalNonHullCulled);
         }
 
         charactersForCulling.Clear();
         charactersForCulling.AddRange(Character.CharacterList.Where(c => c.IsVisible));
 
-        Cull(viewTarget, charactersForCulling, 0, charactersForCulling.Count, ref _totalNonHullCulled);
-
-        totalNonHullCulled = _totalNonHullCulled;
-        totalHullCulled = _totalHullCulled;
+        Cull(charactersForCulling, 0, charactersForCulling.Count, ref totalNonHullCulled);
     }
+
+    private static int totalHullCulled;
+    private static int totalNonHullCulled;
+
+    private static Action<Tuple<int, int>> CullHulls = static range => Cull(hullsForCulling, range.Item1, range.Item2, ref totalHullCulled);
+    private static Action<Tuple<int, int>> CullOtherEntities = static range => Cull(entitiesForCulling, range.Item1, range.Item2, ref totalNonHullCulled);
 
     /// <summary>
     /// Culls a batch of entities.
     /// </summary>
-    private static void Cull<T>(Entity viewTarget, List<T> entities, int fromInclusive, int toExclusive, ref int totalCulled) where T : Entity
+    private static void Cull<T>(List<T> entities, int fromInclusive, int toExclusive, ref int totalCulled) where T : Entity
     {
         Span<Segment> entityEdges = stackalloc Segment[8];
         Span<Segment> edgeClipBuffer = stackalloc Segment[3];
@@ -597,7 +589,7 @@ public partial class Plugin
                 if (hull.BallastFlora is not null) { continue; }
                 entityAABB = hull.WorldRect;
             }
-            else if (typeof(T) == typeof(Character) && entity is Character character && character != viewTarget)
+            else if (typeof(T) == typeof(Character) && entity is Character { IsLocalPlayer: false } character)
             {
                 entityAABB = AABB.CalculateDynamic(character);
             }
@@ -617,7 +609,7 @@ public partial class Plugin
                     entityAABB.Offset(item.DrawPosition);
 
                     // Check if item is inside a culled hull
-                    if (item.CurrentHull is Hull itemHull && isEntityCulled.TryGetValue(itemHull, out bool _))
+                    if (item.CurrentHull is Hull itemHull && isEntityCulled.GetValue(itemHull))
                     {
                         RectangleF hullAABB = itemHull.WorldRect;
                         if (entityAABB.X > hullAABB.X
@@ -636,20 +628,22 @@ public partial class Plugin
                         continue;
                     }
 
-                    if (!entityVisibleExtents.TryGetValue(structure, out RectangleF extents))
+                    ref RectangleF extents = ref entityVisibleExtents.GetValueRef(structure, out bool isNew);
+                    if (isNew)
                     {
-                        entityVisibleExtents.TryAdd(structure, extents = AABB.CalculateFixed(structure));
+                        extents = AABB.CalculateFixed(structure);
                     }
 
                     entityAABB = extents;
                     entityAABB.Offset(structure.DrawPosition);
 
-                    if (!entityHull.TryGetValue(structure, out Hull? structureHull))
+                    ref Hull? structureHull = ref entityHull.GetValueRef(structure, out isNew);
+                    if (isNew)
                     {
-                        entityHull.TryAdd(structure, structureHull = Hull.FindHull(structure.WorldPosition));
+                        structureHull = Hull.FindHull(structure.WorldPosition);
                     }
 
-                    if (structureHull != null && isEntityCulled.TryGetValue(structureHull, out bool _))
+                    if (structureHull != null && isEntityCulled.GetValue(structureHull))
                     {
                         RectangleF hullAABB = structureHull.WorldRect;
                         if (entityAABB.X > hullAABB.X
@@ -775,9 +769,8 @@ public partial class Plugin
                     goto SKIP;
                 }
             }
-
         CULL:;
-            isEntityCulled.TryAdd(entity, true);
+            isEntityCulled.SetValue(entity, true);
             entitiesCulled++;
 
         SKIP:;

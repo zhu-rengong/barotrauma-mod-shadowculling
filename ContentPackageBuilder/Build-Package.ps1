@@ -8,7 +8,7 @@ $osMap = @{
     "osx-x64"   = [BuildOS]::Mac
 }
 
-$platforms = [BuildOS]::Windows
+$platforms = [BuildOS]::All
 $targets = [BuildTarget]::Client
 $config = [BuildConfiguration]::Release
 
