@@ -139,10 +139,10 @@ public partial class Plugin
         out BooleanSetting setting,
         Action<BooleanSetting>? configure = null)
     {
-        setting = new BooleanSetting(identifier.ToIdentifier(), defaultValue, label: $"{ModPrefix}.{identifier}.displayname")
+        setting = new BooleanSetting(identifier.ToIdentifier(), defaultValue, label: TextManager.Get($"{ModPrefix}.{identifier}.displayname"))
         {
             ShowInUI = true,
-            ToolTip = $"{ModPrefix}.{identifier}.tooltip",
+            ToolTip = TextManager.Get($"{ModPrefix}.{identifier}.tooltip"),
             SyncMode = SettingSyncMode.NoSync
         };
         configure?.Invoke(setting);
@@ -155,10 +155,10 @@ public partial class Plugin
         out FloatSetting setting,
         Action<FloatSetting>? configure = null)
     {
-        setting = new FloatSetting(identifier.ToIdentifier(), defaultValue, label: $"{ModPrefix}.{identifier}.displayname")
+        setting = new FloatSetting(identifier.ToIdentifier(), defaultValue, label: TextManager.Get($"{ModPrefix}.{identifier}.displayname"))
         {
             ShowInUI = true,
-            ToolTip = $"{ModPrefix}.{identifier}.tooltip",
+            ToolTip = TextManager.Get($"{ModPrefix}.{identifier}.tooltip"),
             SyncMode = SettingSyncMode.NoSync
         };
         configure?.Invoke(setting);
