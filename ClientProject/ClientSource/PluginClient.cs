@@ -47,6 +47,8 @@ public partial class Plugin
     private static AttachedProperty<bool> isEntityCulled = AttachedProperty<bool>.Create(false);
     private static Vector2? previousViewInterpolatedPosition;
 
+    public static Vector2 ViewPosHijacked;
+
     // Object pooling for performance
     private static ObjectPool<PooledLinkedList<Segment>> segmentListPool = new(() => new());
 
@@ -139,7 +141,7 @@ public partial class Plugin
                 return false;
             }
 
-            Vector2 viewTargetPosition = GetViewTargetPosition(viewTarget);
+            Vector2 viewTargetPosition = ViewPosHijacked;
             Vector2 viewInterpolatedPosition = GetViewInterpolatedPosition(viewTarget, viewTargetPosition, out Vector2 viewDirection);
 
             UpdateQuadrantOrigins(viewTargetPosition);
@@ -269,21 +271,12 @@ public partial class Plugin
                 ref Shadow shadow = ref validShadowBuffer[validShadowNumber];
                 ref Segment occluder = ref shadow.Occluder;
 
-                // Transforms shadows for doors, adjusting for open/close state.
+                // Skip doors whose open state has changed.
                 if (convexHull.ParentEntity is Item item
-                    && item.GetComponent<Door>() is Door { OpenState: > 0.0f and < 1.0f } door)
+                    && item.GetComponent<Door>() is Door door
+                    && (door.OpenState - door.lastOpenState) != 0.0f)
                 {
-                    float doorStateDelta = (door.IsOpen ? door.OpeningSpeed : door.ClosingSpeed) * (float)Timing.Step;
-
-                    Vector2 doorLosVertexOffset = 0.5f
-                        * occluderVertexUnitOffset
-                        * MathF.Min(
-                            MathF.Max(0.0f, occluder.Length - doorStateDelta),
-                            800.0f * doorStateDelta);
-
-                    occluder.End -= doorLosVertexOffset;
-                    occluder.Start += doorLosVertexOffset;
-                    shadow.Recalculate(viewTargetPosition, occluder.Start, occluder.End);
+                    continue;
                 }
 
                 shadow.DistanceToView = (viewTargetPosition - occluder.Center).LengthSquared();

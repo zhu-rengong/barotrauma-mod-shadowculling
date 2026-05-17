@@ -103,7 +103,7 @@ public partial class Plugin
     {
         if (!ConfigService.TryGetConfig(_package, name, out setting))
         {
-            LoggerService.LogError($"Failed to find config named {name}!");
+            loggerService.LogError($"Failed to find config named {name}!");
             return false;
         }
 

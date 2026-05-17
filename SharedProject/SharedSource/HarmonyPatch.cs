@@ -3,6 +3,7 @@ using Barotrauma.Lights;
 using HarmonyLib;
 using Microsoft.Xna.Framework.Graphics;
 using ShadowCulling.Geometry;
+using Emit = System.Reflection.Emit;
 
 namespace ShadowCulling;
 
@@ -98,6 +99,74 @@ public static class HarmonyPatch
         static bool Prefix(Character __instance)
         {
             return !Plugin.IsEntityCulled.GetValue(__instance);
+        }
+    }
+
+    #endregion
+
+    #region LOS Position Capture
+
+    [HarmonyLib.HarmonyPatch(typeof(LightManager), nameof(LightManager.UpdateObstructVision)), HarmonyTranspiler]
+    private static IEnumerable<CodeInstruction> LightManager_UpdateObstructVision_Transpiler(IEnumerable<CodeInstruction> instructions)
+    {
+        try
+        {
+            var codeMatcher = new CodeMatcher(instructions);
+
+            /*
+            call class Barotrauma.Entity Barotrauma.Lights.LightManager::get_ViewTarget()
+            callvirt instance valuetype[XNATypes] Microsoft.Xna.Framework.Vector2 Barotrauma.Entity::get_DrawPosition()
+            stloc.s pos (9)
+            */
+            codeMatcher.MatchEndForward(
+                new(OpCodes.Callvirt, AccessTools.PropertyGetter(typeof(Entity), nameof(Entity.DrawPosition))),
+                new(OpCodes.Stloc_S)
+            );
+            int posLocalIndex = (codeMatcher.Instruction.operand as Emit.LocalBuilder)!.LocalIndex;
+
+            /*
+            ldc.i4.0
+            stloc.s centeredOnHead(10)
+            */
+            codeMatcher.MatchEndForward(
+                new(OpCodes.Ldc_I4_0),
+                new(OpCodes.Stloc_S)
+            );
+            int centeredOnHeadLocalIndex = (codeMatcher.Instruction.operand as Emit.LocalBuilder)!.LocalIndex;
+
+            /*
+            ldloc.s centeredOnHead(10)
+            brfalse 301(03C9) ldloc.s convexHulls(15)
+            */
+            codeMatcher.MatchEndForward([new(OpCodes.Call, AccessTools.Method(typeof(ConvexHull), nameof(ConvexHull.GetHullsInRange)))]);
+            codeMatcher.MatchEndForward(
+                new(OpCodes.Ldloc_S),
+                new(OpCodes.Brfalse)
+            );
+            var jumpTarget = (Emit.Label)codeMatcher.Instruction.operand;
+
+            /*
+            ldloc.s	convexHulls (15)
+            brfalse	429 (056C) ldarg.1
+             */
+            codeMatcher.SearchForward(ci => ci.labels.Contains(jumpTarget));
+
+            /*
+            Plugin.ViewPos = pos;
+            */
+            var ldlocPos = new CodeInstruction(OpCodes.Ldloc_S, (byte)posLocalIndex);
+            ldlocPos.MoveLabelsFrom(codeMatcher.Instruction);
+            codeMatcher.Insert(
+                ldlocPos,
+                new(OpCodes.Stsfld, AccessTools.Field(typeof(Plugin), nameof(Plugin.ViewPosHijacked)))
+            );
+
+            return codeMatcher.InstructionEnumeration();
+        }
+        catch (Exception ex)
+        {
+            Plugin.LoggerService.LogError($"Transpiler error: {ex.Message}", LuaCsMessageOrigin.CSharpMod);
+            return instructions;
         }
     }
 
