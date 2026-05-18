@@ -159,20 +159,6 @@ public partial class Plugin
     }
 
     /// <summary>
-    /// Gets the actual position to use as the view target.
-    /// </summary>
-    private static Vector2 GetViewTargetPosition(Entity viewTarget)
-    {
-        if (viewTarget is Character viewTargetCharacter
-            && viewTargetCharacter.AnimController?.GetLimb(LimbType.Head) is Limb head
-            && !head.IsSevered && !head.Removed)
-        {
-            return head.body.DrawPosition;
-        }
-        return viewTarget.DrawPosition;
-    }
-
-    /// <summary>
     /// Gets the interpolated position of the view relative to the submarine if applicable.
     /// </summary>
     private static Vector2 GetViewInterpolatedPosition(Entity viewTarget, in Vector2 viewTargetCorrectedPosition, out Vector2 viewDirection)
@@ -246,6 +232,13 @@ public partial class Plugin
                     continue;
                 }
 
+                // Skip doors whose open state has changed.
+                if (convexHull.ParentEntity is Item item
+                    && item.GetComponent<Door>() is Door door
+                    && (door.OpenState - door.lastOpenState) != 0.0f)
+                {
+                    continue;
+                }
 
                 Vector2 vertex0Position = convexHull.losVertices[0].Pos + convexHull.losOffsets[0] + offsetToWorld;
                 Vector2 vertex1Position = convexHull.losVertices[1].Pos + convexHull.losOffsets[1] + offsetToWorld;
@@ -270,14 +263,6 @@ public partial class Plugin
 
                 ref Shadow shadow = ref validShadowBuffer[validShadowNumber];
                 ref Segment occluder = ref shadow.Occluder;
-
-                // Skip doors whose open state has changed.
-                if (convexHull.ParentEntity is Item item
-                    && item.GetComponent<Door>() is Door door
-                    && (door.OpenState - door.lastOpenState) != 0.0f)
-                {
-                    continue;
-                }
 
                 shadow.DistanceToView = (viewTargetPosition - occluder.Center).LengthSquared();
 
