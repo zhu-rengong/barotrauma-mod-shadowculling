@@ -1,183 +1,19 @@
-﻿using Barotrauma.Items.Components;
+using Barotrauma.Items.Components;
 using Barotrauma.Lights;
 using HarmonyLib;
 using Microsoft.Xna.Framework.Graphics;
-using ShadowCulling.Geometry;
-using Emit = System.Reflection.Emit;
 
 namespace ShadowCulling;
 
 /// <summary>
-/// Contains Harmony patches for modifying game behavior to support shadow culling.
+/// Debug visualization for shadow culling: draws culling hulls, shadow casters,
+/// entity bounds and character bounds over the game world.
 /// </summary>
-[HarmonyLib.HarmonyPatch]
-public static class HarmonyPatch
+public static partial class Patches
 {
 #if CLIENT
-    /// <summary>
-    /// Returns zero size since light rendering is independent of culling and we don't need its DrawSize for AABB calculation.
-    /// </summary>
-    [HarmonyLib.HarmonyPatch(
-        declaringType: typeof(LightComponent),
-        methodName: nameof(LightComponent.DrawSize),
-        methodType: MethodType.Getter
-    )]
-    private static class LightComponent_DrawSize
-    {
-        static bool Prefix(ref Vector2 __result)
-        {
-            __result.X = 0.0f;
-            __result.Y = 0.0f;
-            return false;
-        }
-    }
-
-    #region Culling Integration
-
-    [HarmonyLib.HarmonyPatch(
-        declaringType: typeof(Submarine),
-        methodName: nameof(Submarine.CullEntities)
-    )]
-    private static class Submarine_CullEntities
-    {
-        static void Postfix()
-        {
-            Plugin.PerformEntityCulling();
-        }
-    }
-
-    [HarmonyLib.HarmonyPatch(
-        declaringType: typeof(Entity),
-        methodName: nameof(Entity.RemoveAll)
-    )]
-    private static class Entity_RemoveAll
-    {
-        static void Postfix()
-        {
-            Plugin.TryClearAll();
-        }
-    }
-
-    #endregion
-
-    #region Rendering Patches
-
-
-    [HarmonyLib.HarmonyPatch(typeof(Submarine), nameof(Submarine.DrawBack)), HarmonyPrefix]
-    static void Submarine_DrawBack_Prefix(ref Predicate<MapEntity>? predicate)
-        => InjectRenderCulling(ref predicate);
-
-    [HarmonyLib.HarmonyPatch(typeof(Submarine), nameof(Submarine.DrawDamageable)), HarmonyPrefix]
-    static void Submarine_DrawDamageable_Prefix(ref Predicate<MapEntity>? predicate)
-        => InjectRenderCulling(ref predicate);
-
-    [HarmonyLib.HarmonyPatch(typeof(Submarine), nameof(Submarine.DrawFront)), HarmonyPrefix]
-    static void Submarine_DrawFront_Prefix(ref Predicate<MapEntity>? predicate)
-        => InjectRenderCulling(ref predicate);
-
-    static void InjectRenderCulling(ref Predicate<MapEntity>? predicate)
-    {
-        if (!Plugin.DisallowCulling)
-        {
-            var originalPredicate = predicate;
-
-            predicate = originalPredicate == null
-                 ? entity => !Plugin.IsEntityCulled.GetValue(entity)
-                 : entity => !Plugin.IsEntityCulled.GetValue(entity) && originalPredicate(entity);
-        }
-    }
-
-    /// <summary>
-    /// Patch for Character.Draw to cull character rendering.
-    /// </summary>
-    [HarmonyLib.HarmonyPatch(
-        declaringType: typeof(Character),
-        methodName: nameof(Character.Draw)
-    )]
-    private static class Character_Draw
-    {
-        static bool Prefix(Character __instance)
-        {
-            return !Plugin.IsEntityCulled.GetValue(__instance);
-        }
-    }
-
-    #endregion
-
-    #region LOS Position Capture
-
-    [HarmonyLib.HarmonyPatch(typeof(LightManager), nameof(LightManager.UpdateObstructVision)), HarmonyTranspiler]
-    private static IEnumerable<CodeInstruction> LightManager_UpdateObstructVision_Transpiler(IEnumerable<CodeInstruction> instructions)
-    {
-        try
-        {
-            var codeMatcher = new CodeMatcher(instructions);
-
-            /*
-            call class Barotrauma.Entity Barotrauma.Lights.LightManager::get_ViewTarget()
-            callvirt instance valuetype[XNATypes] Microsoft.Xna.Framework.Vector2 Barotrauma.Entity::get_DrawPosition()
-            stloc.s pos (9)
-            */
-            codeMatcher.MatchEndForward(
-                new(OpCodes.Callvirt, AccessTools.PropertyGetter(typeof(Entity), nameof(Entity.DrawPosition))),
-                new(OpCodes.Stloc_S)
-            );
-            int posLocalIndex = (codeMatcher.Instruction.operand as Emit.LocalBuilder)!.LocalIndex;
-
-            /*
-            ldc.i4.0
-            stloc.s centeredOnHead(10)
-            */
-            codeMatcher.MatchEndForward(
-                new(OpCodes.Ldc_I4_0),
-                new(OpCodes.Stloc_S)
-            );
-            int centeredOnHeadLocalIndex = (codeMatcher.Instruction.operand as Emit.LocalBuilder)!.LocalIndex;
-
-            /*
-            ldloc.s centeredOnHead(10)
-            brfalse 301(03C9) ldloc.s convexHulls(15)
-            */
-            codeMatcher.MatchEndForward([new(OpCodes.Call, AccessTools.Method(typeof(ConvexHull), nameof(ConvexHull.GetHullsInRange)))]);
-            codeMatcher.MatchEndForward(
-                new(OpCodes.Ldloc_S),
-                new(OpCodes.Brfalse)
-            );
-            var jumpTarget = (Emit.Label)codeMatcher.Instruction.operand;
-
-            /*
-            ldloc.s	convexHulls (15)
-            brfalse	429 (056C) ldarg.1
-             */
-            codeMatcher.SearchForward(ci => ci.labels.Contains(jumpTarget));
-
-            /*
-            Plugin.ViewPos = pos;
-            */
-            var ldlocPos = new CodeInstruction(OpCodes.Ldloc_S, (byte)posLocalIndex);
-            ldlocPos.MoveLabelsFrom(codeMatcher.Instruction);
-            codeMatcher.Insert(
-                ldlocPos,
-                new(OpCodes.Stsfld, AccessTools.Field(typeof(Plugin), nameof(Plugin.ViewPosHijacked)))
-            );
-
-            return codeMatcher.InstructionEnumeration();
-        }
-        catch (Exception ex)
-        {
-            Plugin.LoggerService.LogError($"Transpiler error: {ex.Message}", LuaCsMessageOrigin.CSharpMod);
-            return instructions;
-        }
-    }
-
-    #endregion
-
-    #region Debug Drawing
-
-    /// <summary>
-    /// Patch for GameScreen.DrawMap to render debug visualization.
-    /// </summary>
-    [HarmonyLib.HarmonyPatch(
+    /// <summary>Patch for GameScreen.DrawMap to render debug visualization.</summary>
+    [HarmonyPatch(
         declaringType: typeof(GameScreen),
         methodName: nameof(GameScreen.DrawMap)
     )]
@@ -185,7 +21,7 @@ public static class HarmonyPatch
     {
         static void Postfix(SpriteBatch spriteBatch)
         {
-            if (!Plugin.DebugDrawingEnabled || Plugin.DisallowCulling || GameMain.GameScreen.Cam is not Camera camera)
+            if (!Plugin.DebugDrawingEnabled || GameMain.GameScreen.Cam is not Camera camera)
             {
                 return;
             }
@@ -327,7 +163,7 @@ public static class HarmonyPatch
 
         private static void DrawDebugStructure(SpriteBatch spriteBatch, Camera camera, Structure structure)
         {
-            RectangleF entityAABB = AABB.CalculateFixed(structure);
+            RectangleF entityAABB = Plugin.EntityVisibleExtents.GetValue(structure);
             entityAABB.Offset(structure.DrawPosition);
 
             Color structureColor = Plugin.IsEntityCulled.GetValue(structure)
@@ -356,7 +192,7 @@ public static class HarmonyPatch
                     continue;
                 }
 
-                RectangleF entityAABB = AABB.CalculateDynamic(character);
+                RectangleF entityAABB = EntityBounds.CalculateDynamic(character);
                 Color characterColor = Plugin.IsEntityCulled.GetValue(character)
                     ? new Color(Color.Red, 0.2f)
                     : Color.Red;
@@ -375,8 +211,5 @@ public static class HarmonyPatch
             }
         }
     }
-
-    #endregion
-
 #endif
 }

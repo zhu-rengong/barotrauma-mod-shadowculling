@@ -1,5 +1,4 @@
 ﻿using Barotrauma.Items.Components;
-using ShadowCulling.Geometry;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using ConvexHull = Barotrauma.Lights.ConvexHull;
@@ -12,22 +11,35 @@ public partial class Plugin
 {
     private const float ShadowPredictionToleranceMultiplier = 1000.0f;
 
+    private const float PredictionNeighborDistance = 10.0f;
+    private const float PredictionNeighborDistanceSquared = PredictionNeighborDistance * PredictionNeighborDistance;
+
+    // Widens the circle prefilter below so it can never skip a pair the exact test would accept.
+    private const float PredictionNeighborSlack = 1.0f;
+
     private static int PartitionRangeSize => 50;
     private static int ParallelTolerance => (int)(PartitionRangeSize * 1.5);
     public static int ParallelismLevel => Math.Min(Environment.ProcessorCount, 4);
-    public static int ConcurrencyLevel => ParallelismLevel * 3;
 
     // Performance tracking
     private static Stopwatch cullingPerformanceTimer = new();
-    private static double lastCullingUpdateTime;
-    private static int ticksUntilNextCull;
+    public static bool IsCullPerformable;
+    public static double LastCullingUpdateTime;
+    public static int TicksUntilNextCull;
+    public static long CullTickAccumulator;
     private static double lastPerformanceLogTime;
 
     // Shadow data buffers
     private static Shadow[] validShadowBuffer = new Shadow[512];
     private static int[] integerRangeBuffer = Enumerable.Range(0, validShadowBuffer.Length).ToArray();
+    // Per shadow: the squared distance from its occluder's center beyond which a point cannot be near it, filled
+    // by ApplyShadowPrediction alongside the buffer above.
+    private static float[] occluderNeighborReachSquared = new float[validShadowBuffer.Length];
+    // Per shadow: its quadrant coverage, in its own array so the filtering loops never touch the ~100-byte Shadow.
+    private static Quadrant[] shadowQuadrants = new Quadrant[validShadowBuffer.Length];
     private static PooledLinkedList<int> shadowIndexLinkedList = new();
-    private static Dictionary<Quadrant, RayRange> quadrants = new(4);
+    // The four 90° sectors of the view, in probe order. An array: both hot loops walk all four.
+    private static QuadrantRayRange[] quadrants = [];
     private static List<int> sortedShadowIndices = new(1024);
     private static PooledLinkedList<Segment> shadowClippingOccluders = new();
     private static HashSet<int> predictableOccluderStart = new(1024);
@@ -49,40 +61,59 @@ public partial class Plugin
 
     public static Vector2 ViewPosHijacked;
 
-    // Object pooling for performance
-    private static ObjectPool<PooledLinkedList<Segment>> segmentListPool = new(() => new());
-
-    // Parallel processing configuration
-    private static ParallelOptions cullingParallelOptions = new() { MaxDegreeOfParallelism = ParallelismLevel };
+    // Each worker thread keeps a small cache of clipping lists, and every list is emptied before it is stored again,
+    // so its nodes stay pooled.
+    private static ObjectPool<PooledLinkedList<Segment>> segmentListPool = new(
+        static () => new PooledLinkedList<Segment>(),
+        onReturn: static list => list.Clear());
 
     // Public properties for external access
     public static Shadow[] ValidShadowBuffer => validShadowBuffer;
     public static List<int> SortedShadowIndices => sortedShadowIndices;
     public static List<Hull> HullsForCulling => hullsForCulling;
+    public static AttachedProperty<RectangleF> EntityVisibleExtents => entityVisibleExtents;
     public static AttachedProperty<bool> IsEntityCulled => isEntityCulled;
 
-    /// <summary>
-    /// Determines whether culling should be disabled based on current game state.
-    /// </summary>
+    public static bool IsDrawingMap { get; set; } = false;
+
+    /// <summary>Determines whether culling should be disabled based on current game state.</summary>
     public static bool DisallowCulling =>
-        Screen.Selected is { IsEditor: true }
+        !CullingEnabled
+        || !IsDrawingMap
         || !GameMain.LightManager.LosEnabled
-        || GameMain.LightManager.LosMode == LosMode.None
+        || GameMain.LightManager.LosMode != LosMode.Opaque
         || (GameMain.IsSingleplayer
             ? GameMain.GameSession == null || !GameMain.GameSession.IsRunning
             : !GameMain.Client?.GameStarted ?? true);
 
-    public partial void InitializeProjectSpecific()
+    /// <summary>One of the four sectors of the view, together with the ray range that covers it.</summary>
+    private struct QuadrantRayRange
     {
-        quadrants.Add(Quadrant.RightTop, new RayRange(Vector2.Zero, Vector2.UnitX, Vector2.UnitY));
-        quadrants.Add(Quadrant.LeftTop, new RayRange(Vector2.Zero, -Vector2.UnitX, Vector2.UnitY));
-        quadrants.Add(Quadrant.LeftBottom, new RayRange(Vector2.Zero, -Vector2.UnitX, -Vector2.UnitY));
-        quadrants.Add(Quadrant.RightBottom, new RayRange(Vector2.Zero, Vector2.UnitX, -Vector2.UnitY));
+        /// <summary>The quadrant flag that stands for this sector.</summary>
+        public Quadrant Quadrant;
+
+        /// <summary>The rays bounding the sector, re-anchored at the view position on every cull.</summary>
+        public RayRange Range;
+
+        public QuadrantRayRange(Quadrant quadrant, in RayRange range)
+        {
+            Quadrant = quadrant;
+            Range = range;
+        }
     }
 
-    /// <summary>
-    /// Clears all culling data if the state is dirty.
-    /// </summary>
+    public partial void InitializeProjectSpecific()
+    {
+        quadrants =
+        [
+            new(Quadrant.RightTop, new RayRange(Vector2.Zero, Vector2.UnitX, Vector2.UnitY)),
+            new(Quadrant.LeftTop, new RayRange(Vector2.Zero, -Vector2.UnitX, Vector2.UnitY)),
+            new(Quadrant.LeftBottom, new RayRange(Vector2.Zero, -Vector2.UnitX, -Vector2.UnitY)),
+            new(Quadrant.RightBottom, new RayRange(Vector2.Zero, Vector2.UnitX, -Vector2.UnitY)),
+        ];
+    }
+
+    /// <summary>Clears all culling data if the state is dirty.</summary>
     public static void TryClearAll()
     {
         if (isCullingStateDirty)
@@ -100,38 +131,35 @@ public partial class Plugin
         }
     }
 
-    public static void PerformEntityCulling(bool debug = false)
+    public static void CacheStructureVisibleExtents(Structure structure, Vector2 max, Vector2 min)
     {
-        ticksUntilNextCull++;
-        if (lastCullingUpdateTime <= Timing.TotalTime - CullingInterval)
+        RectangleF extents = new RectangleF(MathF.Min(max.X, min.X), MathF.Max(max.Y, min.Y), MathF.Abs(max.X - min.X), MathF.Abs(max.Y - min.Y));
+        extents.Offset(-structure.WorldPosition);
+        entityVisibleExtents.SetValue(structure, extents);
+    }
+
+    public static void PerformEntityCulling()
+    {
+        cullingPerformanceTimer.Restart();
+        bool success = DoCull(out int validShadowNumber);
+        cullingPerformanceTimer.Stop();
+        CullTickAccumulator += cullingPerformanceTimer.ElapsedTicks / TicksUntilNextCull;
+
+        if (success && DebugLoggingEnabled && Timing.TotalTime - lastPerformanceLogTime >= 2.0f)
         {
-            cullingPerformanceTimer.Restart();
-
-            bool success = DoCull(out int validShadowNumber);
-            cullingPerformanceTimer.Stop();
-            // Calculate as the average of ticks per frame
-            GameMain.PerformanceCounter.AddElapsedTicks("Draw:ShadowCulling", cullingPerformanceTimer.ElapsedTicks / ticksUntilNextCull);
-
-            if (success && DebugLoggingEnabled && Timing.TotalTime - lastPerformanceLogTime >= 2.0f)
-            {
-                float averageCullingTime = GameMain.PerformanceCounter.GetAverageElapsedMillisecs("Draw:ShadowCulling");
-                DebugConsole.NewMessage(
-                    $"Mean: {averageCullingTime:F2}ms | " +
-                    $"Cull(Hull): {totalHullCulled}/{hullsForCulling.Count} | " +
-                    $"Cull(NonHull): {totalNonHullCulled}/{entitiesForCulling.Count + charactersForCulling.Count} | " +
-                    $"Shadows: {sortedShadowIndices.Count}/{validShadowNumber}");
-                lastPerformanceLogTime = Timing.TotalTime;
-            }
-
-            ticksUntilNextCull = 0;
-            lastCullingUpdateTime = Timing.TotalTime;
+            float averageCullingTime = GameMain.PerformanceCounter.GetAverageElapsedMillisecs("Draw:ShadowCulling");
+            DebugConsole.NewMessage(
+                $"Mean: {averageCullingTime:F2}ms | " +
+                $"Cull(Hull): {totalHullCulled}/{hullsForCulling.Count} | " +
+                $"Cull(NonHull): {totalNonHullCulled}/{entitiesForCulling.Count + charactersForCulling.Count} | " +
+                $"Shadows: {sortedShadowIndices.Count}/{validShadowNumber} | " +
+                $"ClipPool: {segmentListPool.Statistics}");
+            lastPerformanceLogTime = Timing.TotalTime;
         }
 
         bool DoCull(out int validShadowNumber)
         {
             validShadowNumber = 0;
-
-            if (!debug && !CullingEnabled) { return false; }
 
             if (DisallowCulling
                 || LightManager.ViewTarget is not Entity viewTarget
@@ -142,15 +170,15 @@ public partial class Plugin
             }
 
             Vector2 viewTargetPosition = ViewPosHijacked;
-            Vector2 viewInterpolatedPosition = GetViewInterpolatedPosition(viewTarget, viewTargetPosition, out Vector2 viewDirection);
+            _ = GetViewInterpolatedPosition(viewTarget, viewTargetPosition, out Vector2 viewDirection);
 
             UpdateQuadrantOrigins(viewTargetPosition);
 
             CollectVisibleShadows(viewTargetPosition, camera, out validShadowNumber);
-            FilterOutOccludedShadows(viewTargetPosition);
+            FilterOutOccludedShadows();
             ApplyShadowPrediction(viewTargetPosition, viewDirection);
 
-            CullEntities(viewTarget, camera);
+            CullEntities(camera);
 
             isCullingStateDirty = true;
 
@@ -158,9 +186,7 @@ public partial class Plugin
         }
     }
 
-    /// <summary>
-    /// Gets the interpolated position of the view relative to the submarine if applicable.
-    /// </summary>
+    /// <summary>Gets the interpolated position of the view relative to the submarine if applicable.</summary>
     private static Vector2 GetViewInterpolatedPosition(Entity viewTarget, in Vector2 viewTargetCorrectedPosition, out Vector2 viewDirection)
     {
         Vector2 targetPosition = viewTargetCorrectedPosition;
@@ -185,15 +211,14 @@ public partial class Plugin
 
     private static void UpdateQuadrantOrigins(Vector2 origin)
     {
-        foreach (RayRange quadrant in quadrants.Values)
+        for (int i = 0; i < quadrants.Length; i++)
         {
-            quadrant.UpdateOrigin(origin);
+            ref RayRange range = ref quadrants[i].Range;
+            range.UpdateOrigin(origin);
         }
     }
 
-    /// <summary>
-    /// Collects all visible shadows from convex hulls within the camera view.
-    /// </summary>
+    /// <summary>Collects all visible shadows from convex hulls within the camera view.</summary>
     private static void CollectVisibleShadows(in Vector2 viewTargetPosition, Camera camera, out int validShadowNumber)
     {
         validShadowNumber = 0;
@@ -247,11 +272,13 @@ public partial class Plugin
 
                 Vector2 occluderVertexUnitOffset = Vector2.Normalize(vertex1Position - vertex0Position);
 
-                // Ensures the shadow buffer has enough capacity.
                 if (validShadowNumber >= validShadowBuffer.Length)
                 {
-                    Array.Resize(ref validShadowBuffer, validShadowBuffer.Length + 128);
-                    EnsureIntRangeCapacity(validShadowBuffer.Length);
+                    int capacity = validShadowBuffer.Length + 128;
+                    Array.Resize(ref validShadowBuffer, capacity);
+                    Array.Resize(ref occluderNeighborReachSquared, capacity);
+                    Array.Resize(ref shadowQuadrants, capacity);
+                    EnsureIntRangeCapacity(capacity);
                 }
 
                 validShadowBuffer[validShadowNumber] = new(
@@ -268,14 +295,16 @@ public partial class Plugin
 
                 // Which quadrants does the shadow occluder cover.
                 Quadrant occluderQuadrant = Quadrant.None;
-                foreach (var (quadrant, rayRange) in quadrants)
+                for (int quadrantIndex = 0; quadrantIndex < quadrants.Length; quadrantIndex++)
                 {
-                    if (occluder.IntersectWith(rayRange))
+                    ref readonly QuadrantRayRange quadrant = ref quadrants[quadrantIndex];
+                    if (occluder.IntersectWith(quadrant.Range))
                     {
-                        occluderQuadrant |= quadrant;
+                        occluderQuadrant |= quadrant.Quadrant;
                     }
                 }
                 shadow.OccluderQuadrants = occluderQuadrant;
+                shadowQuadrants[validShadowNumber] = occluderQuadrant;
 
                 validShadowNumber++;
             }
@@ -300,50 +329,52 @@ public partial class Plugin
         }
     }
 
-    /// <summary>
-    /// Filters out shadows that are occluded by other shadows.
-    /// </summary>
-    private static void FilterOutOccludedShadows(in Vector2 viewTargetPosition)
+    /// <summary>Filters out shadows that are occluded by other shadows.</summary>
+    private static void FilterOutOccludedShadows()
     {
         // Use nearer convex hulls to prioritize determining whether farther ones are in shadow,
         // this can significantly improve the hit rate of prediction.
         sortedShadowIndices.Sort((s1, s2) => validShadowBuffer[s1].DistanceToView.CompareTo(validShadowBuffer[s2].DistanceToView));
 
-        shadowIndexLinkedList.Clear(returnNode: true);
-        foreach (int index in sortedShadowIndices)
+        shadowIndexLinkedList.Clear();
+        foreach (int index in CollectionsMarshal.AsSpan(sortedShadowIndices))
         {
             shadowIndexLinkedList.AddLast(index);
         }
 
         Span<Segment> clipBuffer = stackalloc Segment[3];
-        PooledLinkedListNode<int>? currentShadowNode = shadowIndexLinkedList.Last;
+        PooledLinkedListNode currentShadowNode = shadowIndexLinkedList.Last;
 
-        while (currentShadowNode != null)
+        while (currentShadowNode.IsValid)
         {
-            var previousShadowNode = currentShadowNode.Previous;
-            int currentShadowIndex = currentShadowNode.Value;
+            PooledLinkedListNode previousShadowNode = shadowIndexLinkedList.Previous(currentShadowNode);
+            int currentShadowIndex = shadowIndexLinkedList[currentShadowNode];
             ref readonly Shadow currentShadow = ref validShadowBuffer[currentShadowIndex];
             ref readonly Segment entireOccluder = ref currentShadow.Occluder;
             Quadrant quadrants = currentShadow.OccluderQuadrants;
 
             shadowClippingOccluders.AddLast(entireOccluder);
-            shadowIndexLinkedList.Remove(currentShadowNode);
+            // Takes the node out of the ring for the duration of the test below, but keeps its slot alive so that
+            // it can be put back right where it was when the shadow turns out not to be fully occluded.
+            shadowIndexLinkedList.Detach(currentShadowNode);
 
             // Check if this shadow is occluded by remaining shadows
             foreach (int otherShadowIndex in shadowIndexLinkedList)
             {
+                if (!quadrants.HasAnyFlag(shadowQuadrants[otherShadowIndex])) { continue; }
+
                 ref readonly Shadow otherShadow = ref validShadowBuffer[otherShadowIndex];
 
-                if (!quadrants.HasAnyFlag(otherShadow.OccluderQuadrants)) { continue; }
-
-                PooledLinkedListNode<Segment>? clipNode = shadowClippingOccluders.First;
-                if (clipNode == null) { break; }
+                PooledLinkedListNode clipNode = shadowClippingOccluders.First;
+                if (clipNode.IsNull) { break; }
 
                 do
                 {
-                    var nextClipNode = clipNode.Next;
-                    ref readonly Segment occluder = ref clipNode.ValueRef;
+                    PooledLinkedListNode nextClipNode = shadowClippingOccluders.Next(clipNode);
+                    ref readonly Segment occluder = ref shadowClippingOccluders.ValueRef(clipNode);
                     // Clips the occluder against every shadows, replacing it with the resulting clipped segments.
+                    // The reference above must not outlive this block: the insertion below can grow the backing
+                    // array of the list and invalidate it.
                     int clipCount = occluder.ClipFrom(otherShadow, clipBuffer);
                     if (clipCount != 1 || occluder != clipBuffer[0])
                     {
@@ -351,43 +382,49 @@ public partial class Plugin
                         {
                             shadowClippingOccluders.AddBefore(clipNode, clipBuffer[clipIndex]);
                         }
-                        shadowClippingOccluders.Remove(clipNode, returnNode: true);
+                        shadowClippingOccluders.Remove(clipNode);
                     }
                     clipNode = nextClipNode;
-                } while (clipNode != null);
+                } while (clipNode.IsValid);
             }
 
             // Re-add if not fully occluded
             if (shadowClippingOccluders.Count > 0)
             {
                 // Reinserts the shadow node back into the linked list at the appropriate position.
-                if (previousShadowNode != null)
+                if (previousShadowNode.IsValid)
                 {
-                    shadowIndexLinkedList.AddAfter(previousShadowNode, currentShadowNode);
+                    shadowIndexLinkedList.AttachAfter(previousShadowNode, currentShadowNode);
                 }
                 else
                 {
-                    shadowIndexLinkedList.AddFirst(currentShadowNode);
+                    shadowIndexLinkedList.AttachFirst(currentShadowNode);
                 }
             }
             else
             {
-                shadowIndexLinkedList.ReturnNode(currentShadowNode);
+                shadowIndexLinkedList.Recycle(currentShadowNode);
             }
 
-            shadowClippingOccluders.Clear(returnNode: true);
+            shadowClippingOccluders.Clear();
             currentShadowNode = previousShadowNode;
         }
 
         sortedShadowIndices.Clear();
-        sortedShadowIndices.AddRange(shadowIndexLinkedList);
+        // Not AddRange: PooledLinkedList does not implement ICollection<T>, so List<T>.AddRange would fall back to
+        // the IEnumerable<T> path and box the struct enumerator on every frame. The foreach below stays value-typed.
+        foreach (int shadowIndex in shadowIndexLinkedList)
+        {
+            sortedShadowIndices.Add(shadowIndex);
+        }
     }
 
-    /// <summary>
-    /// Applies shadow prediction based on view movement to avoid pop-in effects.
-    /// </summary>
+    /// <summary>Applies shadow prediction based on view movement to avoid pop-in effects.</summary>
     private static void ApplyShadowPrediction(in Vector2 viewTargetPosition, in Vector2 viewDirection)
     {
+        // With the pass running every update the margin would be a single frame wide, and shrinking the occluders
+        // also makes it cull less; the geometry of the frame itself is the better trade.
+        if (CullingInterval <= Timing.Step) { return; }
         if (viewDirection.LengthSquared() <= 0.01f) { return; }
 
         Vector2 predictedPosition = viewTargetPosition + viewDirection;
@@ -395,7 +432,8 @@ public partial class Plugin
         // Identifies which occluders are likely to move based on view direction.
         predictableOccluderStart.Clear();
         predictableOccluderEnd.Clear();
-        foreach (int currentShadowIndex in sortedShadowIndices)
+        Span<int> shadowIndices = CollectionsMarshal.AsSpan(sortedShadowIndices);
+        foreach (int currentShadowIndex in shadowIndices)
         {
             ref Segment currentOccluder = ref validShadowBuffer[currentShadowIndex].Occluder;
 
@@ -410,9 +448,14 @@ public partial class Plugin
             {
                 predictableOccluderEnd.Add(currentShadowIndex);
             }
+
+            // Half the occluder's length bounds the distance from its center to any of its points, and is measured
+            // before the shortening below so it covers the modified occluders too.
+            float reach = PredictionNeighborDistance + PredictionNeighborSlack + currentOccluder.Length * 0.5f;
+            occluderNeighborReachSquared[currentShadowIndex] = reach * reach;
         }
 
-        foreach (int currentShadowIndex in sortedShadowIndices)
+        foreach (int currentShadowIndex in shadowIndices)
         {
             ref Shadow currentShadow = ref validShadowBuffer[currentShadowIndex];
             ref Segment currentOccluder = ref currentShadow.Occluder;
@@ -420,7 +463,7 @@ public partial class Plugin
             // Applies prediction to the start point of an occluder.
             if (predictableOccluderStart.Contains(currentShadowIndex))
             {
-                foreach (int otherShadowIndex in sortedShadowIndices)
+                foreach (int otherShadowIndex in shadowIndices)
                 {
                     if (currentShadowIndex == otherShadowIndex) { continue; }
 
@@ -428,10 +471,14 @@ public partial class Plugin
                     ref readonly Segment otherOccluder = ref otherShadow.Occluder;
 
                     // Checks if start point prediction is valid for this occluder.
-                    if (otherOccluder.ToPointDistanceSquared(currentOccluder.Start) >= 100.0f) { continue; }
+                    if (Vector2.DistanceSquared(otherOccluder.Center, currentOccluder.Start) > occluderNeighborReachSquared[otherShadowIndex]
+                        || otherOccluder.ToPointDistanceSquared(currentOccluder.Start) >= PredictionNeighborDistanceSquared)
+                    {
+                        continue;
+                    }
 
-                    bool isOtherStartCloseEnough = (otherOccluder.Start - currentOccluder.Start).LengthSquared() < 100.0f;
-                    bool isOtherEndCloseEnough = (otherOccluder.End - currentOccluder.Start).LengthSquared() < 100.0f;
+                    bool isOtherStartCloseEnough = (otherOccluder.Start - currentOccluder.Start).LengthSquared() < PredictionNeighborDistanceSquared;
+                    bool isOtherEndCloseEnough = (otherOccluder.End - currentOccluder.Start).LengthSquared() < PredictionNeighborDistanceSquared;
 
                     if ((!isOtherStartCloseEnough && !isOtherEndCloseEnough)
                         || (isOtherStartCloseEnough && !predictableOccluderStart.Contains(otherShadowIndex))
@@ -453,7 +500,7 @@ public partial class Plugin
             // Applies prediction to the end point of an occluder.
             if (predictableOccluderEnd.Contains(currentShadowIndex))
             {
-                foreach (int otherShadowIndex in sortedShadowIndices)
+                foreach (int otherShadowIndex in shadowIndices)
                 {
                     if (currentShadowIndex == otherShadowIndex) { continue; }
 
@@ -461,10 +508,14 @@ public partial class Plugin
                     ref readonly Segment otherOccluder = ref otherShadow.Occluder;
 
                     // Checks if end point prediction is valid for this occluder.
-                    if (otherOccluder.ToPointDistanceSquared(currentOccluder.End) >= 100.0f) { continue; }
+                    if (Vector2.DistanceSquared(otherOccluder.Center, currentOccluder.End) > occluderNeighborReachSquared[otherShadowIndex]
+                        || otherOccluder.ToPointDistanceSquared(currentOccluder.End) >= PredictionNeighborDistanceSquared)
+                    {
+                        continue;
+                    }
 
-                    bool isOtherStartCloseEnough = (otherOccluder.Start - currentOccluder.End).LengthSquared() < 100.0f;
-                    bool isOtherEndCloseEnough = (otherOccluder.End - currentOccluder.End).LengthSquared() < 100.0f;
+                    bool isOtherStartCloseEnough = (otherOccluder.Start - currentOccluder.End).LengthSquared() < PredictionNeighborDistanceSquared;
+                    bool isOtherEndCloseEnough = (otherOccluder.End - currentOccluder.End).LengthSquared() < PredictionNeighborDistanceSquared;
 
                     if ((!isOtherStartCloseEnough && !isOtherEndCloseEnough)
                         || (isOtherStartCloseEnough && !predictableOccluderStart.Contains(otherShadowIndex))
@@ -485,15 +536,13 @@ public partial class Plugin
         }
     }
 
-    /// <summary>
-    /// Performs culling on all entities and returns the count of culled entities.
-    /// </summary>
-    private static void CullEntities(Entity viewTarget, Camera camera)
+    /// <summary>Performs culling on all entities and returns the count of culled entities.</summary>
+    private static void CullEntities(Camera camera)
     {
         totalHullCulled = 0;
         totalNonHullCulled = 0;
 
-        isEntityCulled.ResetValues();
+        isEntityCulled.InvalidateAll();
 
         hullsForCulling.Clear();
         foreach (Hull hull in Hull.HullList)
@@ -533,8 +582,15 @@ public partial class Plugin
             Cull(entitiesForCulling, 0, entitiesForCulling.Count, ref totalNonHullCulled);
         }
 
+        // Not AddRange: the LINQ Where() would allocate an iterator on every cull.
         charactersForCulling.Clear();
-        charactersForCulling.AddRange(Character.CharacterList.Where(c => c.IsVisible));
+        foreach (Character character in Character.CharacterList)
+        {
+            if (character.IsVisible)
+            {
+                charactersForCulling.Add(character);
+            }
+        }
 
         Cull(charactersForCulling, 0, charactersForCulling.Count, ref totalNonHullCulled);
     }
@@ -545,14 +601,14 @@ public partial class Plugin
     private static Action<Tuple<int, int>> CullHulls = static range => Cull(hullsForCulling, range.Item1, range.Item2, ref totalHullCulled);
     private static Action<Tuple<int, int>> CullOtherEntities = static range => Cull(entitiesForCulling, range.Item1, range.Item2, ref totalNonHullCulled);
 
-    /// <summary>
-    /// Culls a batch of entities.
-    /// </summary>
+    /// <summary>Culls a batch of entities.</summary>
     private static void Cull<T>(List<T> entities, int fromInclusive, int toExclusive, ref int totalCulled) where T : Entity
     {
         Span<Segment> entityEdges = stackalloc Segment[8];
         Span<Segment> edgeClipBuffer = stackalloc Segment[3];
-        PooledLinkedList<Segment> clippingEdges = segmentListPool.Get();
+        Span<int> shadowIndices = CollectionsMarshal.AsSpan(sortedShadowIndices);
+        // The lease returns the list to the pool when this method exits, including on early returns and exceptions.
+        using var clippingEdgesLease = segmentListPool.RentLease(out PooledLinkedList<Segment> clippingEdges);
         int entitiesCulled = 0;
 
         for (int index = fromInclusive; index < toExclusive; index++)
@@ -569,7 +625,7 @@ public partial class Plugin
             }
             else if (typeof(T) == typeof(Character) && entity is Character { IsLocalPlayer: false } character)
             {
-                entityAABB = AABB.CalculateDynamic(character);
+                entityAABB = EntityBounds.CalculateDynamic(character);
             }
             else if (typeof(T) == typeof(MapEntity))
             {
@@ -606,20 +662,10 @@ public partial class Plugin
                         continue;
                     }
 
-                    ref RectangleF extents = ref entityVisibleExtents.GetValueRef(structure, out bool isNew);
-                    if (isNew)
-                    {
-                        extents = AABB.CalculateFixed(structure);
-                    }
-
-                    entityAABB = extents;
+                    entityAABB = entityVisibleExtents.GetValue(structure);
                     entityAABB.Offset(structure.DrawPosition);
 
-                    ref Hull? structureHull = ref entityHull.GetValueRef(structure, out isNew);
-                    if (isNew)
-                    {
-                        structureHull = Hull.FindHull(structure.WorldPosition);
-                    }
+                    Hull? structureHull = entityHull.GetOrAdd(structure, static s => Hull.FindHull(s.WorldPosition));
 
                     if (structureHull != null && isEntityCulled.GetValue(structureHull))
                     {
@@ -657,15 +703,16 @@ public partial class Plugin
             // Which quadrants does the entity covers.
             Quadrant entityQuadrant = Quadrant.None;
             int numCoveredQuadrants = 0;
-            foreach (var (quadrant, rayRange) in quadrants)
+            for (int quadrantIndex = 0; quadrantIndex < quadrants.Length; quadrantIndex++)
             {
+                ref readonly QuadrantRayRange quadrant = ref quadrants[quadrantIndex];
                 for (int edgeIndex = 4; edgeIndex < 8; edgeIndex++)
                 {
                     ref readonly Segment edge = ref entityEdges[edgeIndex];
-                    if (edge.IntersectWith(rayRange))
+                    if (edge.IntersectWith(quadrant.Range))
                     {
                         if (++numCoveredQuadrants > 2) { goto SKIP; }
-                        entityQuadrant |= quadrant;
+                        entityQuadrant |= quadrant.Quadrant;
                         break;
                     }
                 }
@@ -713,18 +760,20 @@ public partial class Plugin
             {
                 clippingEdges.AddLast(entityEdges[edgeIndex]);
 
-                foreach (int shadowIndex in sortedShadowIndices)
+                foreach (int shadowIndex in shadowIndices)
                 {
-                    ref readonly Shadow shadow = ref validShadowBuffer[shadowIndex];
-                    if (!entityQuadrant.HasAnyFlag(shadow.OccluderQuadrants)) { continue; }
+                    if (!entityQuadrant.HasAnyFlag(shadowQuadrants[shadowIndex])) { continue; }
 
-                    PooledLinkedListNode<Segment>? clipNode = clippingEdges.First;
-                    if (clipNode == null) { break; }
+                    ref readonly Shadow shadow = ref validShadowBuffer[shadowIndex];
+                    PooledLinkedListNode clipNode = clippingEdges.First;
+                    if (clipNode.IsNull) { break; }
 
                     do
                     {
-                        var nextClipNode = clipNode.Next;
-                        ref readonly Segment edge = ref clipNode.ValueRef;
+                        PooledLinkedListNode nextClipNode = clippingEdges.Next(clipNode);
+                        ref readonly Segment edge = ref clippingEdges.ValueRef(clipNode);
+                        // The reference above must not outlive this block: the insertion below can grow the backing
+                        // array of the list and invalidate it.
                         int clipCount = edge.ClipFrom(shadow, edgeClipBuffer);
                         if (clipCount != 1 || edge != edgeClipBuffer[0])
                         {
@@ -732,15 +781,18 @@ public partial class Plugin
                             {
                                 clippingEdges.AddBefore(clipNode, edgeClipBuffer[clipIndex]);
                             }
-                            clippingEdges.Remove(clipNode, returnNode: true);
+                            clippingEdges.Remove(clipNode);
                         }
                         clipNode = nextClipNode;
-                    } while (clipNode != null);
+                    } while (clipNode.IsValid);
+
+                    // Nothing left of this edge to clip, so the shadows behind it cannot change that.
+                    if (clippingEdges.Count == 0) { break; }
                 }
 
                 bool refuseCulling = clippingEdges.Count > 0;
 
-                clippingEdges.Clear(returnNode: true);
+                clippingEdges.Clear();
 
                 if (refuseCulling)
                 {
@@ -754,7 +806,6 @@ public partial class Plugin
         SKIP:;
         }
 
-        segmentListPool.Return(clippingEdges);
         Interlocked.Add(ref totalCulled, entitiesCulled);
     }
 }
