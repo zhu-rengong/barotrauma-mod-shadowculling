@@ -81,7 +81,7 @@ public partial class Plugin
         !CullingEnabled
         || !IsDrawingMap
         || !GameMain.LightManager.LosEnabled
-        || GameMain.LightManager.LosMode != LosMode.Opaque
+        || GameMain.LightManager.LosMode == LosMode.None
         || (GameMain.IsSingleplayer
             ? GameMain.GameSession == null || !GameMain.GameSession.IsRunning
             : !GameMain.Client?.GameStarted ?? true);
