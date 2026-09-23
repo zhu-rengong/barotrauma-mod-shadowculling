@@ -55,6 +55,7 @@ public partial class Plugin : IAssemblyPlugin
     {
         harmony?.UnpatchSelf();
         harmony = null;
+        ConsoleCommandsService.RemoveRegisteredCommands();
     }
 
 }

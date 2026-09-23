@@ -74,17 +74,21 @@ public partial class Plugin
     public static AttachedProperty<RectangleF> EntityVisibleExtents => entityVisibleExtents;
     public static AttachedProperty<bool> IsEntityCulled => isEntityCulled;
 
-    public static bool IsDrawingMap { get; set; } = false;
+    public static bool IsDrawingInMainViewport { get; set; } = false;
 
-    /// <summary>Determines whether culling should be disabled based on current game state.</summary>
-    public static bool DisallowCulling =>
-        !CullingEnabled
-        || !IsDrawingMap
-        || !GameMain.LightManager.LosEnabled
-        || GameMain.LightManager.LosMode == LosMode.None
-        || (GameMain.IsSingleplayer
-            ? GameMain.GameSession == null || !GameMain.GameSession.IsRunning
-            : !GameMain.Client?.GameStarted ?? true);
+    /// <summary>Determines whether culling should be allowed based on current game state.</summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public static bool IsCullingAllowed()
+    {
+        bool result = CullingEnabled
+            && IsDrawingInMainViewport
+            && GameMain.LightManager.LosEnabled
+            && GameMain.LightManager.LosMode != LosMode.None
+            && (GameMain.IsSingleplayer
+                ? GameMain.GameSession?.IsRunning ?? false
+                : GameMain.Client?.GameStarted ?? false);
+        return result;
+    }
 
     /// <summary>One of the four sectors of the view, together with the ray range that covers it.</summary>
     private struct QuadrantRayRange
@@ -161,9 +165,7 @@ public partial class Plugin
         {
             validShadowNumber = 0;
 
-            if (DisallowCulling
-                || LightManager.ViewTarget is not Entity viewTarget
-                || Screen.Selected?.Cam is not Camera camera)
+            if (LightManager.ViewTarget is not Entity viewTarget || Screen.Selected?.Cam is not Camera camera)
             {
                 TryClearAll();
                 return false;

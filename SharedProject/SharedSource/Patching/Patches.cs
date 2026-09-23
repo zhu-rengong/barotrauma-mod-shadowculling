@@ -29,9 +29,9 @@ public static partial class Patches
         }
     }
 
-    [HarmonyPatch(typeof(GameScreen), nameof(GameScreen.Draw)), HarmonyPrefix]
-    private static void GameScreen_Draw_Prefix()
+    private static void MainViewportDrawStart()
     {
+        Plugin.IsDrawingInMainViewport = true;
         Plugin.TicksUntilNextCull++;
         if (Plugin.LastCullingUpdateTime <= Timing.TotalTime - Plugin.CullingInterval)
         {
@@ -39,9 +39,9 @@ public static partial class Patches
         }
     }
 
-    [HarmonyPatch(typeof(GameScreen), nameof(GameScreen.Draw)), HarmonyFinalizer]
-    private static void GameScreen_Draw_Finalizer()
+    private static void MainViewportDrawEnd()
     {
+        Plugin.IsDrawingInMainViewport = false;
         if (Plugin.IsCullPerformable)
         {
             Plugin.TicksUntilNextCull = 0;
@@ -53,20 +53,40 @@ public static partial class Patches
         }
     }
 
+    [HarmonyPatch(typeof(GameScreen), nameof(GameScreen.Draw)), HarmonyTranspiler]
+    private static IEnumerable<CodeInstruction> GameScreen_Draw_Transpiler(IEnumerable<CodeInstruction> instructions)
+    {
+        try
+        {
+            var codeMatcher = new CodeMatcher(instructions);
+            codeMatcher.MatchStartForward(
+                new CodeMatch(IsLoadArgument),
+                new CodeMatch(IsLoadArgument),
+                new CodeMatch(IsLoadArgument),
+                new CodeMatch(IsLoadArgument),
+                new CodeMatch(OpCodes.Call, AccessTools.Method(typeof(GameScreen), nameof(GameScreen.DrawMap))));
+            codeMatcher.ThrowIfInvalid($"Not found instructions for GameScreen.DrawMap call!");
+            codeMatcher.Insert(new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(Patches), nameof(Patches.MainViewportDrawStart))));
+            codeMatcher.MatchEndForward(new CodeMatch(OpCodes.Call, AccessTools.Method(typeof(GameScreen), nameof(GameScreen.DrawMap))));
+            codeMatcher.InsertAfter(new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(Patches), nameof(Patches.MainViewportDrawEnd))));
+
+            return codeMatcher.InstructionEnumeration();
+        }
+        catch (Exception ex)
+        {
+            Plugin.LoggerService.LogError($"Transpiler error: {ex.Message}", LuaCsMessageOrigin.CSharpMod);
+            return instructions;
+        }
+    }
+
     [HarmonyPatch(typeof(LightManager), nameof(LightManager.UpdateObstructVision)), HarmonyFinalizer]
     private static void LightManager_UpdateObstructVision_Finalizer()
     {
-        if (!Plugin.DisallowCulling && Plugin.IsCullPerformable)
+        if (Plugin.IsCullPerformable && Plugin.IsCullingAllowed())
         {
             Plugin.PerformEntityCulling();
         }
     }
-
-    [HarmonyPatch(typeof(GameScreen), nameof(GameScreen.DrawMap)), HarmonyPrefix]
-    private static void GameScreen_DrawMap_Prefix() => Plugin.IsDrawingMap = true;
-
-    [HarmonyPatch(typeof(GameScreen), nameof(GameScreen.DrawMap)), HarmonyFinalizer]
-    private static void GameScreen_DrawMap_Finalizer() => Plugin.IsDrawingMap = false;
 
     [HarmonyPatch(typeof(Submarine), nameof(Submarine.DrawBack)), HarmonyPrefix]
     private static void Submarine_DrawBack_Prefix(ref Predicate<MapEntity>? predicate)
@@ -82,7 +102,7 @@ public static partial class Patches
 
     private static void InjectRenderCulling(ref Predicate<MapEntity>? predicate)
     {
-        if (!Plugin.DisallowCulling)
+        if (Plugin.IsCullingAllowed())
         {
             var originalPredicate = predicate;
 
@@ -95,7 +115,7 @@ public static partial class Patches
     [HarmonyPatch(typeof(Character), nameof(Character.Draw)), HarmonyPrefix]
     private static bool Character_Draw_Prefix(Character __instance)
     {
-        if (Plugin.DisallowCulling)
+        if (!Plugin.IsCullingAllowed())
         {
             return true;
         }
@@ -210,11 +230,20 @@ public static partial class Patches
             Plugin.LoggerService.LogError($"Transpiler error: {ex.Message}", LuaCsMessageOrigin.CSharpMod);
             return instructions;
         }
+    }
 
-        static bool IsLoadLocal(CodeInstruction instruction) =>
-            instruction.opcode == OpCodes.Ldloc_S
+    public static bool IsLoadLocal(CodeInstruction instruction)
+    {
+        return instruction.opcode == OpCodes.Ldloc_S
             || instruction.opcode == OpCodes.Ldloc
             || (instruction.opcode.Value >= OpCodes.Ldloc_0.Value && instruction.opcode.Value <= OpCodes.Ldloc_3.Value);
+    }
+
+    public static bool IsLoadArgument(CodeInstruction instruction)
+    {
+        return instruction.opcode == OpCodes.Ldarg_S
+            || instruction.opcode == OpCodes.Ldarg
+            || (instruction.opcode.Value >= OpCodes.Ldarg_0.Value && instruction.opcode.Value <= OpCodes.Ldarg_3.Value);
     }
 #endif
 }
