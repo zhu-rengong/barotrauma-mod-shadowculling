@@ -9,10 +9,6 @@ public partial class Plugin : IBarotraumaPlugin
     public static readonly ISettingsService SettingsService = PluginServiceProvider.GetService<ISettingsService>();
     public static readonly IHarmonyProvider HarmonyProvider = PluginServiceProvider.GetService<IHarmonyProvider>();
 
-    public ContentPackage _package = null!;
-
-    public Harmony? harmony;
-
     [MethodImpl(MethodImplOptions.NoOptimization)]
     public void Init()
     {

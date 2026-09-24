@@ -5,17 +5,6 @@ public partial class Plugin
     private void RegisterCommands()
     {
         DebugConsole.RegisterCommand(
-             command: "shadowcullingdebugonce",
-            helpMessage: "Performs a single debug culling operation",
-            flags: CommandFlags.DoNotRelayToServer,
-            onCommandExecuted: (string[] args) =>
-            {
-                TryClearAll();
-                PerformEntityCulling(debug: true);
-            }
-        );
-
-        DebugConsole.RegisterCommand(
              command: "shadowcullingtoggle",
             helpMessage: "Toggles shadow culling on/off",
             flags: CommandFlags.DoNotRelayToServer,
