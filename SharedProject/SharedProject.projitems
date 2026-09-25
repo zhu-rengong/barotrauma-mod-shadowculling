@@ -9,6 +9,7 @@
     <Import_RootNamespace>SharedProject</Import_RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <Content Include="$(MSBuildThisFileDirectory)SharedItems.props" />
     <Compile Include="$(MSBuildThisFileDirectory)SharedSource\**\*.cs" />
   </ItemGroup>
 </Project>

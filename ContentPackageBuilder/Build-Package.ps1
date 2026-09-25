@@ -21,10 +21,10 @@ $userPropsPath = Join-Path $repoRoot "UserBuildData.props"
 $projects = @(
     @{ Path = "ClientProject\WindowsClient.csproj"; Runtime = "win-x64"; Target = [BuildTarget]::Client },
     @{ Path = "ClientProject\LinuxClient.csproj"; Runtime = "linux-x64"; Target = [BuildTarget]::Client },
-    @{ Path = "ClientProject\OSXClient.csproj"; Runtime = "osx-x64"; Target = [BuildTarget]::Client },
+    @{ Path = "ClientProject\MacClient.csproj"; Runtime = "osx-x64"; Target = [BuildTarget]::Client },
     @{ Path = "ServerProject\WindowsServer.csproj"; Runtime = "win-x64"; Target = [BuildTarget]::Server },
     @{ Path = "ServerProject\LinuxServer.csproj"; Runtime = "linux-x64"; Target = [BuildTarget]::Server },
-    @{ Path = "ServerProject\OSXServer.csproj"; Runtime = "osx-x64"; Target = [BuildTarget]::Server }
+    @{ Path = "ServerProject\MacServer.csproj"; Runtime = "osx-x64"; Target = [BuildTarget]::Server }
 ) | ForEach-Object {
     $_.OS = $osMap[$_.Runtime]; $_
 } | Where-Object {

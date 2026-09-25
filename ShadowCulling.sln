@@ -4,14 +4,14 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{756A48A3-4A29-4B4F-BC0C-3A6D1E4F7A1C}"
 	ProjectSection(SolutionItems) = preProject
-		Build.props = Build.props
+		BuildData.props = BuildData.props
 	EndProjectSection
 EndProject
 Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "SharedSource", "SharedProject\SharedSource.shproj", "{3C1540C8-8235-4E85-8BFF-9AF5FE32FE99}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "WindowsClient", "ClientProject\WindowsClient.csproj", "{1A2B3C4D-5E6F-7A8B-9C0D-1E2F3A4B5C6D}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OSXClient", "ClientProject\OSXClient.csproj", "{2B3C4D5E-6F7A-8B9C-0D1E-2F3A4B5C6D7E}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MacClient", "ClientProject\MacClient.csproj", "{2B3C4D5E-6F7A-8B9C-0D1E-2F3A4B5C6D7E}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "LinuxClient", "ClientProject\LinuxClient.csproj", "{3C4D5E6F-7A8B-9C0D-1E2F-3A4B5C6D7E8F}"
 EndProject

@@ -1,35 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <Import Project="..\SharedProject\SharedProject.projitems" Label="Shared" />
-  <Import Project="../UserBuildData.props" />
-  <Import Project="../Build.props" />
-
-  <ItemGroup>
-    <Reference Include="Barotrauma">
-      <HintPath>$(RefsPath)\Linux\Barotrauma.dll</HintPath>
-    </Reference>
-    <Reference Include="BarotraumaCore">
-      <HintPath>$(RefsPath)\Linux\BarotraumaCore.dll</HintPath>
-    </Reference>
-    <Reference Include="MonoGame.Framework.Linux.NetStandard">
-      <HintPath>$(RefsPath)\MonoGame.Framework.Linux.NetStandard.dll</HintPath>
-    </Reference>
-  </ItemGroup>
-
-  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
-    <DefineConstants>TRACE;LINUX;CLIENT</DefineConstants>
+  <PropertyGroup>
+    <PlatformName>Linux</PlatformName>
+    <DefineConstants>$(DefineConstants);LINUX</DefineConstants>
   </PropertyGroup>
-
-  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
-    <DefineConstants>TRACE;LINUX;CLIENT</DefineConstants>
-  </PropertyGroup>
-
-  <Target Name="CopyFiles" AfterTargets="Build">
-    <ItemGroup>
-      <Assemblies Include="$(TargetDir)$(TargetName).dll" />
-      <DepsFiles Include="$(TargetDir)$(TargetName).deps.json" />
-    </ItemGroup>
-    <Copy SourceFiles="@(Assemblies)" DestinationFiles="$(MSBuildThisFileDirectory)..\ContentPackageBuilder\Content\bin\Client\Linux\$(TargetName).dll" />
-    <Copy SourceFiles="@(DepsFiles)" DestinationFiles="$(MSBuildThisFileDirectory)..\ContentPackageBuilder\Content\bin\Client\Linux\$(TargetName).deps.json" />
-  </Target>
-
+  <Import Project="ClientItems.props" />
 </Project>

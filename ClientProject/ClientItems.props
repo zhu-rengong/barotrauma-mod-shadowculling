@@ -1,0 +1,7 @@
+﻿<Project>
+  <PropertyGroup>
+    <BuildTarget>Client</BuildTarget>
+    <DefineConstants>$(DefineConstants);CLIENT</DefineConstants>
+  </PropertyGroup>
+  <Import Project="..\BuildData.props" />
+</Project>

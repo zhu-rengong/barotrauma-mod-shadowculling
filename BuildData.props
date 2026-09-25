@@ -1,0 +1,18 @@
+<Project>
+  <PropertyGroup>
+    <ModName>ShadowCulling</ModName>
+  </PropertyGroup>
+
+  <Import Project="UserBuildData.props" />
+
+  <Import Project="SharedProject\SharedProject.projitems" Label="Shared" />
+  <Import Project="SharedProject\SharedItems.props" />
+
+  <Target Name="CopyFiles" AfterTargets="Build">
+    <ItemGroup>
+      <FilesToCopy Include="$(TargetDir)$(TargetName).dll" />
+      <FilesToCopy Include="$(TargetDir)$(TargetName).deps.json" />
+    </ItemGroup>
+    <Copy SourceFiles="@(FilesToCopy)" DestinationFolder="$(MSBuildThisFileDirectory)ContentPackageBuilder\Content\bin\$(PlatformName)" />
+  </Target>
+</Project>
