@@ -1,17 +1,21 @@
 ﻿<Project>
   <PropertyGroup>
-    <!-- 
-    IMPORTANT: Don't make use of special (ie: spaces / : ; , \ < > ?) (periods "." are good) and non-english characters in the ModName.
-     -->
     <ModName>ShadowCulling</ModName>
     <RepositoryURL>https://github.com/zhu-rengong/barotrauma-mod-shadowculling</RepositoryURL>
-
-    <!-- 
-    Enables the use of Publicized assemblies in place of the standard Barotrauma assemblies, allowing access to members that were 
-    previously restricted by access modifiers. Enable only if you know what you are doing.
-     -->
     <UsePublicizedAssemblies>true</UsePublicizedAssemblies>
   </PropertyGroup>
 
   <Import Project="UserBuildData.props" />
+
+  <Import Project="SharedProject\SharedProject.projitems" Label="Shared" />
+  <Import Project="SharedProject\SharedItems.props" />
+
+  <Target Name="CopyFiles" AfterTargets="Build">
+    <ItemGroup>
+      <FilesToCopy Include="$(TargetDir)$(TargetName).dll" />
+      <FilesToCopy Include="$(TargetDir)$(TargetName).deps.json" />
+      <FilesToCopy Include="$(TargetDir)$(TargetName).pdb" />
+    </ItemGroup>
+    <Copy SourceFiles="@(FilesToCopy)" DestinationFolder="$(MSBuildThisFileDirectory)ContentPackageBuilder\Content\bin\$(PlatformName)" />
+  </Target>
 </Project>

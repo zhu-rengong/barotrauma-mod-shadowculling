@@ -1,30 +1,7 @@
 ﻿<Project>
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <DefineConstants>$(DefineConstants);CLIENT</DefineConstants>
     <BuildTarget>Client</BuildTarget>
-    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <DefineConstants>$(DefineConstants);CLIENT</DefineConstants>
   </PropertyGroup>
-
   <Import Project="..\BuildData.props" />
-
-  <Import Project="..\SharedProject\SharedProject.projitems" Label="Shared" />
-  <Import Project="..\SharedProject\SharedItems.props" />
-
-  <PropertyGroup>
-    <RootNamespace>$(ModName)</RootNamespace>
-    <AssemblyName>$(ModName)$(BuildTarget)</AssemblyName>
-  </PropertyGroup>
-
-  <Target Name="CopyFiles" AfterTargets="Build">
-    <ItemGroup>
-      <FilesToCopy Include="$(TargetDir)$(TargetName).dll" />
-      <FilesToCopy Include="$(TargetDir)$(TargetName).deps.json" />
-      <FilesToCopy Include="$(TargetDir)$(TargetName).pdb" />
-    </ItemGroup>
-    <Copy SourceFiles="@(FilesToCopy)" DestinationFolder="$(MSBuildThisFileDirectory)..\ContentPackageBuilder\Content\bin\$(PlatformName)" />
-  </Target>
-
 </Project>
